@@ -1,4 +1,5 @@
-const API_BASE_URL = 'http://localhost:5000/api';
+import { API_CONFIG } from '../config/api';
+const API_BASE_URL = API_CONFIG.BACKEND.BASE_URL;
 
 // Get client ID from Angel Broking login or generate new one
 const getClientId = () => {
