@@ -8,7 +8,7 @@ export const API_CONFIG = {
     MARKET_DATA_URL: 'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/'
   },
   BACKEND: {
-    BASE_URL: 'https://backend-one-umber-90.vercel.app/api'
+    BASE_URL: 'https://backend-zuva.onrender.com/api'
   }
 };
 
