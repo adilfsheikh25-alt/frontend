@@ -22,7 +22,9 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
   };
 
   return (
-    <header className="bg-[#cb102d] text-white shadow-lg">
+    <header className="text-white shadow-lg" style={{
+      background: 'linear-gradient(135deg, #1C1717 0%, #C4AA69 50%, #D6B26A 100%)'
+    }}>
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo and Title */}
@@ -76,6 +78,16 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               Analytics
             </Link>
             <Link
+              to="/news"
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                location.pathname === '/news' 
+                  ? 'bg-white/20 text-[#FFFFFF]' 
+                  : 'text-[#FFFFFF] hover:bg-white/10'
+              }`}
+            >
+              News
+            </Link>
+            <Link
               to="/settings"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/settings' 
@@ -104,7 +116,10 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
             {!isAutoLoggingIn && isLoggedIn && (
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                className="flex items-center space-x-2 px-3 py-2 text-white rounded-lg transition-colors hover:opacity-80"
+                style={{
+                  background: 'linear-gradient(135deg, #1C1717 0%, #C4AA69 50%, #D6B26A 100%)'
+                }}
               >
                 <LogOut className="w-4 h-4" />
                 <span>Logout</span>

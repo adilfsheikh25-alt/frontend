@@ -7,6 +7,7 @@ import Watchlist from './components/Watchlist';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import Settings from './components/Settings';
 import LoginPage from './components/LoginPage';
+import NewsPage from './components/NewsPage';
 import loginService from './services/loginService';
 import './App.css';
 
@@ -87,6 +88,7 @@ function App() {
           <Route path="/holdings" element={<Holdings />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/analytics" element={<AnalyticsDashboard />} />
+          <Route path="/news" element={<NewsPage />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </div>

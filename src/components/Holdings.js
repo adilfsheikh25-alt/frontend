@@ -720,7 +720,7 @@ const Holdings = () => {
         {summary && Array.isArray(holdings) && holdings.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             {/* Total Holdings Card */}
-            <div className="relative bg-[#FFD682] rounded-3xl shadow-lg overflow-hidden">
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#F7B801' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -741,7 +741,9 @@ const Holdings = () => {
             </div>
 
             {/* Total Value Card */}
-            <div className="relative bg-[#cb102d] rounded-3xl shadow-lg overflow-hidden">
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{
+              background: 'linear-gradient(135deg, #020024 0%, #090979 50%, #00D4FF 100%)'
+            }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -752,7 +754,7 @@ const Holdings = () => {
               <div className="p-4 text-white">
                 <p className="text-sm font-medium mb-1">Total Value</p>
                 <p className="text-xl font-bold mb-1">₹{summary.totalValue?.toFixed(2) || '0.00'}</p>
-                <p className="text-xs text-gray-300 mb-2">Last month: ₹{(summary.totalValue * 0.95)?.toFixed(2) || '0.00'}</p>
+                <p className="text-xs text-white/80 mb-2">Last month: ₹{(summary.totalValue * 0.95)?.toFixed(2) || '0.00'}</p>
                 
                 {/* Percentage change pill */}
                 <div className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
@@ -762,7 +764,7 @@ const Holdings = () => {
             </div>
 
             {/* Total Invested Card */}
-            <div className="relative bg-[#cb102d] rounded-3xl shadow-lg overflow-hidden">
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#806F48' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -773,7 +775,7 @@ const Holdings = () => {
               <div className="p-4 text-white">
                 <p className="text-sm font-medium mb-1">Total Invested</p>
                 <p className="text-xl font-bold mb-1">₹{summary.totalInvestment?.toFixed(2) || '0.00'}</p>
-                <p className="text-xs text-gray-300 mb-2">Last month: ₹{(summary.totalInvestment * 0.95)?.toFixed(2) || '0.00'}</p>
+                <p className="text-xs text-gray-200 mb-2">Last month: ₹{(summary.totalInvestment * 0.95)?.toFixed(2) || '0.00'}</p>
                 
                 {/* Percentage change pill */}
                 <div className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
@@ -783,7 +785,7 @@ const Holdings = () => {
             </div>
 
             {/* Total P&L Card */}
-            <div className="relative bg-[#cb102d] rounded-3xl shadow-lg overflow-hidden">
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#BEA566' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -791,10 +793,10 @@ const Holdings = () => {
                 </div>
               </div>
               
-              <div className="p-4 text-white">
+              <div className="p-4 text-black">
                 <p className="text-sm font-medium mb-1">Total P&L</p>
                 <p className="text-xl font-bold mb-1">₹{(summary.totalValue - summary.totalInvestment)?.toFixed(2) || '0.00'}</p>
-                <p className="text-xs text-gray-300 mb-2">Last month: ₹{((summary.totalValue - summary.totalInvestment) * 0.9)?.toFixed(2) || '0.00'}</p>
+                <p className="text-xs text-gray-600 mb-2">Last month: ₹{((summary.totalValue - summary.totalInvestment) * 0.9)?.toFixed(2) || '0.00'}</p>
                 
                 {/* Percentage change pill */}
                 <div className="inline-flex items-center px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs font-medium">
