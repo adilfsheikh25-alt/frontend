@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './NewsPage.css';
+import { API_CONFIG } from '../config/api';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = API_CONFIG.BACKEND.BASE_URL;
 
 const NewsPage = () => {
     const [currentCategory, setCurrentCategory] = useState('latest');

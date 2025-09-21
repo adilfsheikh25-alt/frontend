@@ -253,7 +253,7 @@ const Dashboard = ({ activeTab }) => {
 
   const fetchMarketIndices = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/market-indices');
+      const response = await fetch('https://backend-zuva.onrender.com/api/market-indices');
       const data = await response.json();
       setMarketIndices(data);
       console.log('📈 Market indices loaded:', data);
