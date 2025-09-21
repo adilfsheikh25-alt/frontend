@@ -7,40 +7,58 @@ const ManualPWAInstall = () => {
   useEffect(() => {
     // Check if already installed
     const checkInstalled = () => {
-      if (window.matchMedia('(display-mode: standalone)').matches || 
-          window.navigator.standalone === true) {
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+      const isIOSStandalone = window.navigator.standalone === true;
+      const isInstalled = isStandalone || isIOSStandalone;
+      
+      if (isInstalled) {
         setIsInstalled(true);
+        console.log('PWA is already installed');
       }
     };
 
     // Listen for install prompt
     const handleBeforeInstallPrompt = (e) => {
+      console.log('beforeinstallprompt event received');
       e.preventDefault();
       setDeferredPrompt(e);
     };
 
+    // Listen for app installed event
+    const handleAppInstalled = () => {
+      console.log('App was installed');
+      setIsInstalled(true);
+    };
+
     checkInstalled();
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, []);
 
   const handleInstall = async () => {
     if (deferredPrompt) {
       // Use native install prompt if available
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      
-      if (outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-        setIsInstalled(true);
-      } else {
-        console.log('User dismissed the install prompt');
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        
+        if (outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+          setIsInstalled(true);
+        } else {
+          console.log('User dismissed the install prompt');
+        }
+        
+        setDeferredPrompt(null);
+      } catch (error) {
+        console.error('Error with native install prompt:', error);
+        handleManualInstall();
       }
-      
-      setDeferredPrompt(null);
     } else {
       // Fallback to manual installation instructions
       handleManualInstall();

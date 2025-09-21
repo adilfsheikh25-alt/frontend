@@ -56,22 +56,52 @@ const PWAInstallPrompt = () => {
   }, []);
 
   const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-
-    // Show the install prompt
-    deferredPrompt.prompt();
-    
-    // Wait for the user to respond to the prompt
-    const { outcome } = await deferredPrompt.userChoice;
-    
-    if (outcome === 'accepted') {
-      console.log('User accepted the install prompt');
+    if (deferredPrompt) {
+      // Use native install prompt if available
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        
+        if (outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+          setShowInstallPrompt(false);
+        } else {
+          console.log('User dismissed the install prompt');
+        }
+        
+        setDeferredPrompt(null);
+      } catch (error) {
+        console.error('Error with native install prompt:', error);
+        // Fallback to manual instructions
+        showManualInstallInstructions();
+      }
     } else {
-      console.log('User dismissed the install prompt');
+      // Fallback to manual instructions
+      showManualInstallInstructions();
     }
+  };
+
+  const showManualInstallInstructions = () => {
+    const instructions = `
+🚀 Manual Installation Instructions:
+
+CHROME/EDGE:
+1. Look for install icon (⬇️) in address bar
+2. OR click three dots (⋮) → "Install Portfolio Dashboard"
+3. OR press F12 → Application → Manifest → "Install"
+
+FIREFOX:
+1. Look for install icon (⬇️) in address bar
+2. OR click three dots (⋮) → "Install"
+
+SAFARI iOS:
+1. Tap share button (square with arrow)
+2. Tap "Add to Home Screen"
+
+The app is PWA-ready! Try the methods above.
+    `;
     
-    // Clear the deferredPrompt
-    setDeferredPrompt(null);
+    alert(instructions);
     setShowInstallPrompt(false);
   };
 

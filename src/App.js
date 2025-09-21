@@ -12,6 +12,7 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 import PWAStatus from './components/PWAStatus';
 import ManualPWAInstall from './components/ManualPWAInstall';
 import ChromeInstallHelper from './components/ChromeInstallHelper';
+import PWADebug from './components/PWADebug';
 import loginService from './services/loginService';
 import './App.css';
 
@@ -107,6 +108,9 @@ function App() {
         
         {/* PWA Status Indicator */}
         <PWAStatus />
+        
+        {/* PWA Debug (temporary) */}
+        <PWADebug />
       </div>
     </Router>
   );
