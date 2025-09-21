@@ -71,7 +71,7 @@ const WatchlistManager = ({ watchlists, activeWatchlist, onWatchlistChange, onWa
       const fileExtension = fileName.split('.').pop()?.toLowerCase();
       
       if (fileExtension && !['csv', 'xlsx', 'xls'].includes(fileExtension)) {
-        alert('Invalid file type. Please select a valid CSV or Excel file.');
+        console.error('Invalid file type for import');
         // Reset the input
         event.target.value = '';
         return;
@@ -84,7 +84,7 @@ const WatchlistManager = ({ watchlists, activeWatchlist, onWatchlistChange, onWa
       event.target.value = '';
     } else {
       console.log('❌ WatchlistManager: No file selected');
-      alert('No file selected. Please select a file to import.');
+      console.error('No file selected for import');
     }
   };
 

@@ -272,7 +272,7 @@ const Watchlist = () => {
       setImportQueue([]);
       setCurrentImportIndex(0);
       setShowAddDialog(false);
-      alert(`Import complete! Added ${importQueue.length} stocks.`);
+      console.log(`Import complete! Added ${importQueue.length} stocks.`);
     }
   };
 
@@ -395,13 +395,13 @@ const Watchlist = () => {
       // Show completion message with accurate counts
       const totalProcessed = successCount + failCount;
       if (failCount > 0) {
-        alert(`Import complete! Successfully added ${successCount} out of ${totalProcessed} stocks. ${failCount} stocks failed to import.`);
+        console.log(`Import complete! Successfully added ${successCount} out of ${totalProcessed} stocks. ${failCount} stocks failed to import.`);
       } else {
-        alert(`Import complete! Successfully added ${successCount} stocks.`);
+        console.log(`Import complete! Successfully added ${successCount} stocks.`);
       }
     } catch (error) {
       console.error('❌ Import: Error adding all remaining stocks:', error);
-      alert(`Error adding stocks: ${error.message || 'Unknown error'}`);
+      console.error(`Error adding stocks: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -502,11 +502,11 @@ const Watchlist = () => {
         console.log('✅ Watchlist created successfully');
       } else {
         console.error('No watchlist returned from service');
-        alert('Failed to create watchlist. Please try again.');
+        console.error('Failed to create watchlist');
       }
     } catch (error) {
       console.error('Error creating watchlist:', error);
-      alert(`Error creating watchlist: ${error.message || 'Unknown error'}`);
+      console.error(`Error creating watchlist: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -581,7 +581,7 @@ const Watchlist = () => {
     
     if (!file) {
       console.log('❌ Watchlist: No file provided');
-      alert('No file selected. Please select a CSV file to import.');
+      console.error('No file selected for import');
       return;
     }
     
@@ -589,7 +589,7 @@ const Watchlist = () => {
     if (!(file instanceof File) && !(file instanceof Blob)) {
       console.error('❌ Watchlist: Invalid file type:', file);
       console.error('❌ Watchlist: File constructor:', file.constructor);
-      alert('Invalid file type. Please select a valid CSV file.');
+      console.error('Invalid file type for import');
       return;
     }
     
@@ -601,7 +601,7 @@ const Watchlist = () => {
     
     if (fileExtension && !['csv'].includes(fileExtension)) {
       console.error('❌ Watchlist: Invalid file extension:', fileExtension);
-      alert('Invalid file type. Please select a valid CSV file.');
+      console.error('Invalid file type for import');
       return;
     }
     
@@ -654,13 +654,13 @@ const Watchlist = () => {
         }
       } catch (error) {
         console.error('Error importing CSV:', error);
-        alert('Error importing CSV file. Please check the file format.');
+        console.error('Error importing CSV file');
       }
     };
     
     reader.onerror = (error) => {
       console.error('❌ Watchlist: FileReader error:', error);
-      alert('Error reading file. Please try again.');
+      console.error('Error reading file');
     };
     
     reader.readAsText(file);

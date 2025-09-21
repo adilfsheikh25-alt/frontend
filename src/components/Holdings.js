@@ -326,7 +326,7 @@ const Holdings = () => {
       // Validate required fields
       if (!stockData.symbol || !stockData.quantity || !stockData.averagePrice) {
         console.error('❌ Holdings: Missing required fields for update');
-        alert('Please fill in all required fields (Symbol, Quantity, Purchase Price)');
+        console.error('Missing required fields for update');
         return;
       }
       
@@ -427,7 +427,7 @@ const Holdings = () => {
   const handleImport = (event) => {
     const file = event.target.files[0];
     if (!file) {
-      alert('No file selected. Please select a CSV file to import.');
+      console.error('No file selected for import');
       return;
     }
     
@@ -435,7 +435,7 @@ const Holdings = () => {
     const fileName = file.name || '';
     const fileExtension = fileName.split('.').pop()?.toLowerCase();
     if (fileExtension && !['csv'].includes(fileExtension)) {
-      alert('Invalid file type. Please select a valid CSV file.');
+      console.error('Invalid file type for import');
       // Reset the input
       event.target.value = '';
       return;
