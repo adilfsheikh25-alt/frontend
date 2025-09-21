@@ -8,6 +8,10 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import Settings from './components/Settings';
 import LoginPage from './components/LoginPage';
 import NewsPage from './components/NewsPage';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
+import PWAStatus from './components/PWAStatus';
+import ManualPWAInstall from './components/ManualPWAInstall';
+import ChromeInstallHelper from './components/ChromeInstallHelper';
 import loginService from './services/loginService';
 import './App.css';
 
@@ -91,6 +95,18 @@ function App() {
           <Route path="/news" element={<NewsPage />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        
+        {/* PWA Install Prompt */}
+        <PWAInstallPrompt />
+        
+        {/* Manual PWA Install */}
+        <ManualPWAInstall />
+        
+        {/* Chrome Install Helper */}
+        <ChromeInstallHelper />
+        
+        {/* PWA Status Indicator */}
+        <PWAStatus />
       </div>
     </Router>
   );
