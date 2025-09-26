@@ -19,6 +19,7 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
   const [searchResults, setSearchResults] = useState([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const [instruments, setInstruments] = useState([]);
+  const [searchTimer, setSearchTimer] = useState(null);
 
   const exchanges = [
     { value: 'NSE', label: 'NSE', color: 'bg-green-100 text-green-800' },
@@ -49,7 +50,7 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
       setFormData({
         symbol: editData.symbol || '',
         name: editData.name || editData.symbol || '', // Use name if available, fallback to symbol
-        exchange: editData.exchange || 'NSE',
+        exchange: editData.exchange || '',
         symbolToken: editData.symbolToken || '',
         quantity: editData.quantity?.toString() || '',
         averagePrice: editData.averagePrice?.toString() || '',
@@ -66,7 +67,7 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
       setFormData({
         symbol: '',
         name: '',
-        exchange: 'NSE',
+        exchange: '',
         symbolToken: '',
         quantity: '',
         averagePrice: '',
@@ -99,10 +100,9 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
     loadInstruments();
   }, []);
 
-  // Search stocks based on symbol or name
-  const searchStocks = (query) => {
+  // Search stocks based on symbol, name, or token (respects selected exchange)
+  const searchStocks = async (query) => {
     console.log('Searching for:', query);
-    console.log('Available instruments:', instruments.length);
     
     if (!query || query.length < 2) {
       setSearchResults([]);
@@ -110,38 +110,23 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
       return;
     }
 
-    if (!instruments || instruments.length === 0) {
-      console.log('No instruments available for search');
-      return;
+    try {
+      const results = await instrumentsService.searchInstruments(query, 10);
+      setSearchResults(results);
+      setShowSearchResults(results.length > 0);
+    } catch (e) {
+      console.error('Local search error:', e);
+      setSearchResults([]);
+      setShowSearchResults(false);
     }
-
-    const filtered = instruments.filter(instrument => {
-      // Handle the trailing spaces in JSON keys
-      const symbol = (instrument.symbol || instrument['symbol '] || '').trim().toLowerCase();
-      const name = (instrument.name || instrument['name '] || '').trim().toLowerCase();
-      const searchLower = query.toLowerCase();
-      
-      const symbolMatch = symbol && symbol.includes(searchLower);
-      const nameMatch = name && name.includes(searchLower);
-      
-      if (symbolMatch || nameMatch) {
-        console.log('Match found:', instrument);
-      }
-      
-      return symbolMatch || nameMatch;
-    }).slice(0, 10); // Limit to 10 results
-
-    console.log('Search results:', filtered.length, 'stocks found');
-    setSearchResults(filtered);
-    setShowSearchResults(filtered.length > 0);
   };
 
   // Handle stock selection
   const handleStockSelect = async (selectedStock) => {
     const symbol = (selectedStock.symbol || selectedStock['symbol '] || '').trim() || '';
-    const name = cleanStockName((selectedStock.name || selectedStock['name '] || '').trim()) || '';
-    const symbolToken = selectedStock.token?.toString() || '';
-    const exchange = selectedStock.exch_seg || 'NSE';
+    const name = cleanStockName((selectedStock.name || selectedStock['name '] || '').trim()) || symbol;
+    const symbolToken = (selectedStock.token || selectedStock['token '])?.toString() || '';
+    const exchange = selectedStock.exch_seg || formData.exchange || 'NSE';
     
     console.log('🔄 Dialog: Stock selected:', { symbol, name, exchange, symbolToken });
     
@@ -166,8 +151,10 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
     setSearchTerm(value);
     setFormData({ ...formData, symbol: value });
     
+    if (searchTimer) clearTimeout(searchTimer);
     if (value.length >= 2) {
-      searchStocks(value);
+      const t = setTimeout(() => searchStocks(value), 300);
+      setSearchTimer(t);
     } else {
       setShowSearchResults(false);
       setFormData({ ...formData, symbol: value, symbolToken: '' });
@@ -362,7 +349,7 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by symbol or company name (e.g., RELIANCE, TCS)"
+                placeholder="Search by symbol, token, or name (API)"
                 value={searchTerm}
                 onChange={handleSearchChange}
                 onBlur={handleSymbolBlur}
@@ -387,15 +374,15 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
                               {(stock.symbol || stock['symbol '] || '').trim()}
                             </span>
                             <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
-                              {stock.exch_seg}
+                              {stock.exch_seg || formData.exchange}
                             </span>
                           </div>
                           <p className="text-sm text-gray-500 mt-1">
-                            {cleanStockName((stock.name || stock['name '] || '').trim())}
+                            {cleanStockName(((stock.name || stock['name '] || '')).trim())}
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className="text-xs text-gray-400">Token: {stock.token}</span>
+                          <span className="text-xs text-gray-400">Token: {(stock.token || stock['token '])}</span>
                         </div>
                       </div>
                     </button>
@@ -431,6 +418,7 @@ const AddStockDialog = ({ isOpen, onClose, onAddStock, type = 'watchlist', editD
                onChange={(e) => setFormData({...formData, exchange: e.target.value})}
                className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200"
              >
+              <option value="">Select Exchange</option>
               {exchanges.map((exchange) => (
                 <option key={exchange.value} value={exchange.value}>
                   {exchange.label}

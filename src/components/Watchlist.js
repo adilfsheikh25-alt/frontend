@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Edit, Eye, Download, Upload, Settings, TrendingUp, Play, Pause, Clock } from 'lucide-react';
+import { Plus, Trash2, Edit, Eye, Download, Upload, Settings, TrendingUp, Play, Pause, Clock, ChevronUp, ChevronDown } from 'lucide-react';
 import AddStockDialog from './AddStockDialog';
 import WatchlistManager from './WatchlistManager';
 import { watchlistService } from '../services/watchlistService';
 import smartApiService from '../services/smartApiService';
 import autoRefreshService from '../services/autoRefreshService';
 import instrumentsService from '../services/instrumentsService';
-import { generateWatchlistTemplate } from '../utils/excelUtils';
+import { generateWatchlistTemplate, importWatchlist } from '../utils/excelUtils';
 
 // Utility function to get company name from instruments data
 const getCompanyNameFromSymbol = async (symbol, exchange = 'NSE') => {
@@ -17,6 +17,15 @@ const Watchlist = () => {
   const [watchlists, setWatchlists] = useState([]);
   const [activeWatchlist, setActiveWatchlist] = useState(null);
   const [stocks, setStocks] = useState([]);
+  const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
+  const [columnFilters, setColumnFilters] = useState({
+    symbol: '',
+    name: '',
+    ltp: '',
+    change: '',
+    priceAddedAt: '',
+    addedDate: ''
+  });
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showWatchlistManager, setShowWatchlistManager] = useState(false);
   const [editingStock, setEditingStock] = useState(null);
@@ -95,6 +104,56 @@ const Watchlist = () => {
         addedDate: dateValue
       };
     });
+  };
+
+  // Calculate whole days from provided date string until now
+  const calculateDaysSince = (inputDateString) => {
+    if (!inputDateString) return null;
+    let isoLike = inputDateString;
+    // Normalize: support DD/MM/YYYY and YYYY-MM-DD
+    if (isoLike.includes('/')) {
+      const [day, month, year] = isoLike.split('/');
+      isoLike = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    } else if (isoLike.includes('T')) {
+      isoLike = isoLike.split('T')[0];
+    }
+    const date = new Date(isoLike);
+    if (isNaN(date.getTime())) return null;
+    const now = new Date();
+    // Zero time components for accurate whole-day diff
+    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const diffDays = Math.floor((end - start) / msPerDay);
+    return diffDays;
+  };
+
+  // Format elapsed time per spec:
+  // - < 30 days => "X Days"
+  // - < 12 months and >= 30 days => "M Months"
+  // - >= 12 months => "Y.M Yrs." where M is 0-11 (e.g., 2.7 Yrs.)
+  const formatElapsedLabel = (days) => {
+    if (days === null || days === undefined) return null;
+    if (days < 30) {
+      return `${days} Day${days === 1 ? '' : 's'}`;
+    }
+    const totalMonths = Math.floor(days / 30);
+    if (totalMonths < 12) {
+      return `${totalMonths} Month${totalMonths === 1 ? '' : 's'}`;
+    }
+    const years = Math.floor(totalMonths / 12);
+    const monthsRemainder = totalMonths % 12;
+    return `${years}.${monthsRemainder} Yrs.`;
+  };
+
+  // Compute change since added: returns { amountDiff, percentDiff }
+  const computeChangeSinceAdded = (priceAddedAt, lastPrice) => {
+    const buy = parseFloat(priceAddedAt);
+    const ltp = parseFloat(lastPrice);
+    if (isNaN(buy) || isNaN(ltp)) return { amountDiff: null, percentDiff: null };
+    const amountDiff = ltp - buy;
+    const percentDiff = buy === 0 ? null : (amountDiff / buy) * 100;
+    return { amountDiff, percentDiff };
   };
 
   const loadWatchlists = async () => {
@@ -573,11 +632,6 @@ const Watchlist = () => {
 
   const handleImport = (file) => {
     console.log('🔄 Watchlist: handleImport called with:', file);
-    console.log('🔄 Watchlist: file type:', typeof file);
-    console.log('🔄 Watchlist: file instanceof File:', file instanceof File);
-    console.log('🔄 Watchlist: file instanceof Blob:', file instanceof Blob);
-    console.log('🔄 Watchlist: file name:', file?.name);
-    console.log('🔄 Watchlist: file size:', file?.size);
     
     if (!file) {
       console.log('❌ Watchlist: No file provided');
@@ -588,7 +642,6 @@ const Watchlist = () => {
     // Check if it's a valid file object
     if (!(file instanceof File) && !(file instanceof Blob)) {
       console.error('❌ Watchlist: Invalid file type:', file);
-      console.error('❌ Watchlist: File constructor:', file.constructor);
       console.error('Invalid file type for import');
       return;
     }
@@ -596,8 +649,6 @@ const Watchlist = () => {
     // Check file extension
     const fileName = file.name || '';
     const fileExtension = fileName.split('.').pop()?.toLowerCase();
-    console.log('🔄 Watchlist: File name:', fileName);
-    console.log('🔄 Watchlist: File extension:', fileExtension);
     
     if (fileExtension && !['csv'].includes(fileExtension)) {
       console.error('❌ Watchlist: Invalid file extension:', fileExtension);
@@ -605,65 +656,133 @@ const Watchlist = () => {
       return;
     }
     
-    console.log('✅ Watchlist: File validation passed, proceeding with import...');
+    console.log('✅ Watchlist: File validation passed, proceeding with enhanced import...');
     
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const csv = e.target.result;
-        const lines = csv.split('\n');
-        const headers = lines[0].split(',');
-        
-        const importedStocks = [];
-        
-        for (let i = 1; i < lines.length; i++) {
-          if (lines[i].trim()) {
-            const values = lines[i].split(',');
-            const symbol = values[0]?.trim();
-            const exchange = values[1]?.trim() || 'NSE';
-            let dateValue = values[4]?.trim() || new Date().toISOString().split('T')[0];
-            
-            if (symbol) {
-              // Get company name from instruments data
-              const name = await getCompanyNameFromSymbol(symbol, exchange);
-              
-              // Format date as YYYY-MM-DD for dialog compatibility
-              if (dateValue && dateValue.includes('/')) {
-                const [day, month, year] = dateValue.split('/');
-                dateValue = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-              }
-              
-              importedStocks.push({
-                symbol: symbol,
-                name: name,
-                exchange: exchange,
-                priceAddedAt: values[3]?.trim() || '',
-                addedDate: dateValue,
-                symbolToken: values[7]?.trim() || ''
-              });
-            }
-          }
-        }
+    // Use the enhanced import function that automatically fetches names and LTP prices
+    importWatchlist(
+      file,
+      async (importedStocks) => {
+        console.log('✅ Watchlist: Enhanced import successful, imported stocks:', importedStocks);
         
         if (importedStocks.length > 0) {
-          // Start import process with dialog
-          setImportQueue(importedStocks);
-          setCurrentImportIndex(0);
-          setIsImporting(true);
-          setShowAddDialog(true);
+          // Add all stocks directly to database (like handleAddAllRemaining)
+          await handleDirectImport(importedStocks);
+        }
+      },
+      (error) => {
+        console.error('❌ Watchlist: Enhanced import failed:', error);
+        console.error('Error importing CSV file:', error);
+      }
+    );
+  };
+
+  // Handle direct import (add all stocks at once and refresh)
+  const handleDirectImport = async (importedStocks) => {
+    if (!activeWatchlist || importedStocks.length === 0) return;
+    
+    console.log('🔄 Direct Import: Adding all imported stocks:', importedStocks);
+    
+    try {
+      const addedStocks = [];
+      let successCount = 0;
+      let failCount = 0;
+      
+      // Add all imported stocks
+      for (let i = 0; i < importedStocks.length; i++) {
+        const stockData = importedStocks[i];
+        console.log(`🔄 Direct Import: Adding stock ${i + 1}/${importedStocks.length}:`, stockData);
+        
+        // Validate required fields
+        if (!stockData.symbol || !stockData.symbol.trim()) {
+          console.warn(`⚠️ Direct Import: Skipping stock ${i + 1}/${importedStocks.length} - missing symbol`);
+          continue;
+        }
+        
+        if (!stockData.name || !stockData.name.trim()) {
+          console.warn(`⚠️ Direct Import: Skipping stock ${i + 1}/${importedStocks.length} (${stockData.symbol}) - missing name`);
+          continue;
+        }
+        
+        // Process the stock data
+        const processedStockData = {
+          symbol: stockData.symbol?.toUpperCase().trim(),
+          name: stockData.name?.trim(),
+          exchange: stockData.exchange || 'NSE',
+          symbolToken: stockData.symbolToken || '',
+          priceAddedAt: stockData.priceAddedAt || '',
+          addedDate: stockData.addedDate
+        };
+        
+        // Ensure the date is in YYYY-MM-DD format for database compatibility
+        if (processedStockData.addedDate) {
+          if (processedStockData.addedDate.includes('/')) {
+            // Convert from DD/MM/YYYY to YYYY-MM-DD
+            const [day, month, year] = processedStockData.addedDate.split('/');
+            processedStockData.addedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          } else if (processedStockData.addedDate.includes('-')) {
+            // Already in YYYY-MM-DD format, ensure proper padding
+            const [year, month, day] = processedStockData.addedDate.split('-');
+            processedStockData.addedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          }
+        } else {
+          // Set default date if none provided
+          processedStockData.addedDate = new Date().toISOString().split('T')[0];
+        }
+        
+        try {
+          console.log(`🔄 Direct Import: Attempting to add stock ${i + 1}/${importedStocks.length}: ${stockData.symbol}`);
+          console.log(`🔄 Direct Import: Processed stock data:`, processedStockData);
+          
+          const newStock = await watchlistService.addStock(activeWatchlist.id, processedStockData);
+          
+          if (newStock) {
+            const stockWithDate = ensureStocksHaveDates([newStock])[0];
+            addedStocks.push(stockWithDate);
+            successCount++;
+            console.log(`✅ Direct Import: Added stock ${i + 1}/${importedStocks.length}: ${stockData.symbol}`, newStock);
+          } else {
+            failCount++;
+            console.error(`❌ Direct Import: Failed to add stock ${i + 1}/${importedStocks.length}: ${stockData.symbol} - No stock returned from service`);
+          }
+        } catch (stockError) {
+          // Check if it's a duplicate stock error
+          if (stockError.message && stockError.message.includes('already exists')) {
+            console.warn(`⚠️ Direct Import: Skipping duplicate stock ${stockData.symbol} - already exists in watchlist`);
+            // Don't count duplicates as failures, just skip them
+          } else {
+            failCount++;
+            console.error(`❌ Direct Import: Error adding stock ${stockData.symbol}:`, stockError);
+          }
+        }
+      }
+      
+      // Update state with all added stocks at once
+      if (addedStocks.length > 0) {
+        setStocks(prev => {
+          const newStocks = [...prev, ...addedStocks];
+          console.log(`✅ Direct Import: Updated stocks state. Previous count: ${prev.length}, Added: ${addedStocks.length}, New total: ${newStocks.length}`);
+          return newStocks;
+        });
+        console.log(`✅ Direct Import: Successfully added ${addedStocks.length} stocks to state`);
+      }
+      
+      // Force a refresh of stocks from the database to get live prices (like handleAddAllRemaining)
+      setTimeout(() => {
+        console.log('🔄 Direct Import: Refreshing stocks from database to get live prices...');
+        loadStocks();
+      }, 100);
+      
+      // Show completion message
+      const totalProcessed = successCount + failCount;
+      if (failCount > 0) {
+        console.log(`Direct Import complete! Successfully added ${successCount} out of ${totalProcessed} stocks. ${failCount} stocks failed to import.`);
+      } else {
+        console.log(`Direct Import complete! Successfully added ${successCount} stocks.`);
         }
       } catch (error) {
-        console.error('Error importing CSV:', error);
-        console.error('Error importing CSV file');
-      }
-    };
-    
-    reader.onerror = (error) => {
-      console.error('❌ Watchlist: FileReader error:', error);
-      console.error('Error reading file');
-    };
-    
-    reader.readAsText(file);
+      console.error('❌ Direct Import: Error adding stocks:', error);
+      console.error(`Error adding stocks: ${error.message || 'Unknown error'}`);
+    }
   };
 
   // Auto-refresh function (no loading state)
@@ -775,6 +894,55 @@ const Watchlist = () => {
            name.toLowerCase().includes(searchTerm.toLowerCase());
   }) : [];
 
+  // Apply per-column filters
+  const tableStocks = filteredStocks.filter(s => {
+    const matchSymbol = columnFilters.symbol ? (s.symbol || '').toLowerCase().includes(columnFilters.symbol.toLowerCase()) : true;
+    const matchName = columnFilters.name ? (s.name || '').toLowerCase().includes(columnFilters.name.toLowerCase()) : true;
+    const matchLtp = columnFilters.ltp ? String(s.lastPrice ?? '').toLowerCase().includes(columnFilters.ltp.toLowerCase()) : true;
+    const matchChange = columnFilters.change ? String(s.change ?? '').toLowerCase().includes(columnFilters.change.toLowerCase()) : true;
+    const matchPriceAdded = columnFilters.priceAddedAt ? String(s.priceAddedAt ?? '').toLowerCase().includes(columnFilters.priceAddedAt.toLowerCase()) : true;
+    const matchDate = columnFilters.addedDate ? String(s.addedDate ?? '').toLowerCase().includes(columnFilters.addedDate.toLowerCase()) : true;
+    return matchSymbol && matchName && matchLtp && matchChange && matchPriceAdded && matchDate;
+  });
+
+  const sortedStocks = React.useMemo(() => {
+    if (!sortConfig.key) return tableStocks;
+    const key = sortConfig.key;
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    const clone = [...tableStocks];
+    clone.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      const an = parseFloat(av);
+      const bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return (an - bn) * dir;
+      return String(av || '').localeCompare(String(bv || '')) * dir;
+    });
+    return clone;
+  }, [tableStocks, sortConfig]);
+
+  const requestSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const SortHeader = ({ label, sortKey }) => (
+    <button onClick={() => requestSort(sortKey)} className="flex items-center space-x-1 text-left">
+      <span className="text-xs font-medium text-black uppercase tracking-wider">{label}</span>
+      <span className="text-gray-400">
+        {sortConfig.key === sortKey ? (
+          sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronUp className="w-3 h-3 opacity-40" />
+        )}
+      </span>
+    </button>
+  );
+
   // Debug function to test adding a single stock
   const testAddStock = async () => {
     if (!activeWatchlist) {
@@ -813,10 +981,10 @@ const Watchlist = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8 overflow-y-auto">
+    <div className="max-w-[1600px] mx-auto px-4 py-8 overflow-y-auto">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-4">Watchlist</h1>
+      <div className="mb-8" style={{ backgroundColor: '#EEF4F7' }}>
+        <h1 className="text-3xl font-bold text-black mb-4">Watchlist</h1>
         
         {/* Watchlist Selection and Actions */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
@@ -850,7 +1018,8 @@ const Watchlist = () => {
               <button
                 onClick={handleSync}
                 disabled={!Array.isArray(stocks) || stocks.length === 0}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#FFE797' }}
               >
                 <TrendingUp className="w-4 h-4" />
                 <span>Refresh Prices</span>
@@ -879,7 +1048,8 @@ const Watchlist = () => {
             <button
               onClick={handleExport}
               disabled={!Array.isArray(stocks) || stocks.length === 0}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#84994F' }}
             >
               <Download className="w-4 h-4" />
               <span>Export CSV</span>
@@ -887,13 +1057,14 @@ const Watchlist = () => {
             
             <button
               onClick={generateWatchlistTemplate}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors"
+              style={{ backgroundColor: '#FCB53B' }}
             >
               <Download className="w-4 h-4" />
               <span>Demo CSV</span>
             </button>
             
-            <label className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors cursor-pointer">
+            <label className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors cursor-pointer" style={{ backgroundColor: '#B45253' }}>
               <Upload className="w-4 h-4" />
               <span>Import</span>
               <input
@@ -923,7 +1094,8 @@ const Watchlist = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowAddDialog(true)}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors"
+              style={{ backgroundColor: '#84994F' }}
             >
               <Plus className="w-4 h-4" />
               <span>Add Stock</span>
@@ -932,7 +1104,8 @@ const Watchlist = () => {
             <button
               onClick={handleSync}
               disabled={!activeWatchlist || stocks.length === 0}
-              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#FFE797' }}
             >
               <Eye className="w-4 h-4" />
               <span>Sync</span>
@@ -941,7 +1114,8 @@ const Watchlist = () => {
             <button
               onClick={handleClearAll}
               disabled={!activeWatchlist || stocks.length === 0}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#B45253' }}
             >
               <Trash2 className="w-4 h-4" />
               <span>Clear All</span>
@@ -966,32 +1140,33 @@ const Watchlist = () => {
               <p className="text-sm">Add some stocks to get started</p>
             </div>
           ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
               <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Symbol</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">LTP</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Change</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Price Added At</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Added Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="Symbol" sortKey="symbol" /></th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="Name" sortKey="name" /></th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="LTP" sortKey="lastPrice" /></th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="Change" sortKey="change" /></th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50">Price (Change%) since added</th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="Price Added At" sortKey="priceAddedAt" /></th>
+                    <th className="px-4 py-2 text-left sticky top-0 z-10 bg-gray-50"><SortHeader label="Added Date" sortKey="addedDate" /></th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-black uppercase tracking-wider sticky top-0 z-10 bg-gray-50">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredStocks.map((stock, index) => (
+                  {sortedStocks.map((stock, index) => (
                     <tr key={stock.id || `stock-${index}`} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{stock.symbol}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{stock.name}</div>
+                  <td className="px-4 py-2">
+                        <div className="text-sm text-gray-900 max-w-xs">{stock.name}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                         <div className={`text-sm text-gray-900 ${stock.__flash ? 'price-flash' : ''}`}>₹{stock.lastPrice || 'N/A'}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                         {stock.change !== undefined ? (
                           <div className={`text-sm ${stock.change >= 0 ? 'text-green-600' : 'text-red-600'} ${stock.__flash ? 'price-flash' : ''}`}>
                             {stock.change >= 0 ? '+' : ''}₹{Number(stock.change).toFixed(2)}
@@ -1000,13 +1175,34 @@ const Watchlist = () => {
                           <div className="text-sm text-gray-500">N/A</div>
                         )}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
+                        {(() => {
+                          const { amountDiff, percentDiff } = computeChangeSinceAdded(stock.priceAddedAt, stock.lastPrice);
+                          if (amountDiff === null) return <div className="text-sm text-gray-500">N/A</div>;
+                          const isUp = amountDiff >= 0;
+                          const amountStr = `₹${Math.abs(amountDiff).toFixed(2)}`;
+                          const percentStr = percentDiff === null ? '' : `${Math.abs(percentDiff).toFixed(2)}%`;
+                          return (
+                            <div className={`text-sm ${isUp ? 'text-green-600' : 'text-red-600'}`}>
+                              {isUp ? '+' : '-'}{amountStr}{percentStr ? ` (${isUp ? '+' : '-'}${percentStr})` : ''}
+                            </div>
+                          );
+                        })()}
+                  </td>
+                  <td className="px-4 py-2 whitespace-nowrap">
                         <div className="text-sm text-gray-900">₹{stock.priceAddedAt || 'N/A'}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{stock.addedDate || 'N/A'}</div>
+                  <td className="px-4 py-2 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {(() => {
+                            const label = stock.addedDate || 'N/A';
+                            const days = calculateDaysSince(stock.addedDate);
+                            const elapsed = days === null ? null : formatElapsedLabel(days);
+                            return elapsed === null ? label : `${label} (${elapsed})`;
+                          })()}
+                        </div>
                   </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">
                           <button
                             onClick={() => {

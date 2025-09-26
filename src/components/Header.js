@@ -23,15 +23,15 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
 
   return (
     <header className="text-white shadow-lg" style={{
-      background: 'linear-gradient(135deg, #1C1717 0%, #C4AA69 50%, #D6B26A 100%)'
+      backgroundColor: '#004c4c'
     }}>
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* Logo and Title */}
           <div className="flex items-center space-x-4">
             <Link to="/" className="flex items-center space-x-2 hover:opacity-80 transition-opacity">
-              <TrendingUp className="w-8 h-8" />
-              <span className="text-xl font-bold">Angel Portfolio</span>
+              <TrendingUp className="w-8 h-8 text-white" />
+              <span className="text-xl font-bold text-white">Angel Portfolio</span>
             </Link>
           </div>
 
@@ -41,8 +41,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               Overview
@@ -51,8 +51,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/holdings"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/holdings' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               Holdings
@@ -61,8 +61,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/watchlist"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/watchlist' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               Watchlist
@@ -71,8 +71,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/analytics"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/analytics' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               Analytics
@@ -81,8 +81,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/news"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/news' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               News
@@ -91,8 +91,8 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               to="/settings"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/settings' 
-                  ? 'bg-white/20 text-[#FFFFFF]' 
-                  : 'text-[#FFFFFF] hover:bg-white/10'
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg-white/10'
               }`}
             >
               Settings
@@ -118,7 +118,7 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
                 onClick={handleLogout}
                 className="flex items-center space-x-2 px-3 py-2 text-white rounded-lg transition-colors hover:opacity-80"
                 style={{
-                  background: 'linear-gradient(135deg, #1C1717 0%, #C4AA69 50%, #D6B26A 100%)'
+                  backgroundColor: '#004c4c'
                 }}
               >
                 <LogOut className="w-4 h-4" />

@@ -41,18 +41,21 @@ const smartApiService = {
     try {
       // Check if API is configured with session credentials
       if (!this.isApiConfigured()) {
-        console.log('Angel Broking API not configured in session, using fallback prices');
-        return this.generateFallbackPrice(symbol);
+        console.log(`Angel Broking API not configured in session, skipping live price for ${symbol}`);
+        return null; // Do not generate random fallback
       }
 
       // If we have symbol token, use it directly
       if (symbolToken) {
+        console.log(`Using provided symbol token ${symbolToken} for ${symbol}`);
         return await this.fetchFromAngelAPI(exchange, [symbolToken]);
       }
 
       // Try to find symbol token from instruments data
+      console.log(`Looking up symbol token for ${symbol} on ${exchange}`);
       const token = await this.getSymbolToken(symbol, exchange);
       if (token) {
+        console.log(`Found symbol token ${token} for ${symbol}`);
         return await this.fetchFromAngelAPI(exchange, [token]);
       }
 
@@ -61,7 +64,8 @@ const smartApiService = {
       return this.generateFallbackPrice(symbol);
     } catch (error) {
       console.error(`Error fetching live price for ${symbol}:`, error);
-      return this.generateFallbackPrice(symbol);
+      console.log(`Skipping fallback price for ${symbol} due to API error`);
+      return null;
     }
   },
 
@@ -96,45 +100,58 @@ const smartApiService = {
 
       const data = await response.json();
       console.log('Angel API Response:', data);
+      console.log('Angel API Response Status:', data.status);
+      console.log('Angel API Response Data:', data.data);
 
-      if (data.status && data.data && data.data.fetched && data.data.fetched.length > 0) {
-        const fetchedData = data.data.fetched[0];
-        const lastPrice = parseFloat(fetchedData.ltp) || 0;
-        // Try multiple common keys for previous close from the API payload
-        const prevCloseRaw = (
-          fetchedData.close ??
-          fetchedData.closePrice ??
-          fetchedData.previousClose ??
-          fetchedData.yclose ??
-          fetchedData.yesterdayClose
-        );
-        const prevClose = parseFloat(prevCloseRaw) || 0;
-        let change = parseFloat(fetchedData.netChange);
-        let changePercentage = parseFloat(fetchedData.percentChange);
+      // Check if we have valid data
+      if (data.status && data.data) {
+        // Return array of fetched results (handle multiple tokens)
+        if (data.data.fetched && data.data.fetched.length > 0) {
+          return data.data.fetched.map(fd => {
+            const lastPrice = parseFloat(fd.ltp) || 0;
+            const prevCloseRaw = (
+              fd.close ??
+              fd.closePrice ??
+              fd.previousClose ??
+              fd.yclose ??
+              fd.yesterdayClose
+            );
+            const prevClose = parseFloat(prevCloseRaw) || 0;
+            let change = parseFloat(fd.netChange);
+            let changePercentage = parseFloat(fd.percentChange);
 
-        // If API doesn't supply change, derive it from lastPrice and previous close
-        if (!isFinite(change)) {
-          change = prevClose > 0 ? (lastPrice - prevClose) : 0;
+            if (!isFinite(change)) {
+              change = prevClose > 0 ? (lastPrice - prevClose) : 0;
+            }
+            if (!isFinite(changePercentage)) {
+              changePercentage = prevClose > 0 ? ((change / prevClose) * 100) : 0;
+            }
+
+            return {
+              symbol: (fd.tradingSymbol || '').replace('-EQ', ''),
+              exchange: fd.exchange,
+              symbolToken: (fd.symbolToken || fd.exchangeToken || '').toString(),
+              lastPrice,
+              change: parseFloat(change.toFixed(2)) || 0,
+              changePercentage: parseFloat(changePercentage.toFixed(2)) || 0,
+              timestamp: new Date().toISOString(),
+              open: parseFloat(fd.open) || 0,
+              high: parseFloat(fd.high) || 0,
+              low: parseFloat(fd.low) || 0,
+              close: prevClose,
+              volume: parseInt(fd.tradeVolume) || 0
+            };
+          });
+        } else if (data.data.unfetched && data.data.unfetched.length > 0) {
+          console.log('Angel API Unfetched Symbols:', data.data.unfetched);
+          throw new Error(`Symbols not found in API: ${data.data.unfetched.map(s => s.symbol).join(', ')}`);
+        } else {
+          console.log('Angel API: No fetched or unfetched data');
+          throw new Error('No data fetched from Angel API - empty response');
         }
-        if (!isFinite(changePercentage)) {
-          changePercentage = prevClose > 0 ? ((change / prevClose) * 100) : 0;
-        }
-
-        return {
-          symbol: fetchedData.tradingSymbol?.replace('-EQ', '') || symbolTokens[0],
-          exchange: fetchedData.exchange,
-          lastPrice,
-          change: parseFloat(change.toFixed(2)) || 0,
-          changePercentage: parseFloat(changePercentage.toFixed(2)) || 0,
-          timestamp: new Date().toISOString(),
-          open: parseFloat(fetchedData.open) || 0,
-          high: parseFloat(fetchedData.high) || 0,
-          low: parseFloat(fetchedData.low) || 0,
-          close: prevClose,
-          volume: parseInt(fetchedData.tradeVolume) || 0
-        };
       } else {
-        throw new Error('No data fetched from Angel API');
+        console.log('Angel API: Invalid response structure');
+        throw new Error('Invalid API response structure');
       }
     } catch (error) {
       console.error('Angel API Error:', error);
@@ -142,89 +159,60 @@ const smartApiService = {
     }
   },
 
-  // Get symbol token from instruments data
-  async getSymbolToken(symbol, exchange = 'NSE') {
-    try {
-      // Load instruments data
-      const response = await fetch('/instruments.json');
-      if (!response.ok) {
-        throw new Error('Failed to load instruments data');
-      }
-
-      const instruments = await response.json();
-
-      // Find matching instrument
-      const instrument = instruments.find(instr => {
-        const instrSymbol = (instr.symbol || instr['symbol '] || '').trim();
-        const instrExchange = instr.exch_seg || 'NSE';
-        return instrSymbol.toUpperCase() === symbol.toUpperCase() &&
-               instrExchange.toUpperCase() === exchange.toUpperCase();
-      });
-
-      return instrument ? instrument.token?.toString() : null;
-    } catch (error) {
-      console.error('Error getting symbol token:', error);
-      return null;
-    }
+  // Helper: chunk an array
+  _chunk(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
   },
 
-  // Generate fallback price when API is not available
-  generateFallbackPrice(symbol) {
-    const basePrice = this.generateRealisticPrice(symbol);
-    const change = (Math.random() - 0.5) * (basePrice * 0.1); // ±5% change
-    const changePercentage = (change / basePrice) * 100;
-
-    return {
-      symbol,
-      exchange: 'NSE',
-      lastPrice: parseFloat(basePrice.toFixed(2)),
-      change: parseFloat(change.toFixed(2)),
-      changePercentage: parseFloat(changePercentage.toFixed(2)),
-      timestamp: new Date().toISOString(),
-      open: parseFloat((basePrice * 0.99).toFixed(2)),
-      high: parseFloat((basePrice * 1.02).toFixed(2)),
-      low: parseFloat((basePrice * 0.98).toFixed(2)),
-      close: parseFloat((basePrice * 0.995).toFixed(2)),
-      volume: Math.floor(Math.random() * 1000000) + 100000
-    };
-  },
-
-  // Generate realistic price based on symbol
-  generateRealisticPrice(symbol) {
-    // Generate different price ranges for different types of stocks
-    const symbolUpper = symbol.toUpperCase();
-    
-    if (symbolUpper.includes('RELIANCE') || symbolUpper.includes('TCS')) {
-      return Math.random() * 2000 + 1000; // 1000-3000 range
-    } else if (symbolUpper.includes('INFY') || symbolUpper.includes('HDFC')) {
-      return Math.random() * 1000 + 500; // 500-1500 range
-    } else if (symbolUpper.includes('SBIN') || symbolUpper.includes('ICICI')) {
-      return Math.random() * 500 + 200; // 200-700 range
-    } else if (symbolUpper.includes('TATA') || symbolUpper.includes('WIPRO')) {
-      return Math.random() * 300 + 100; // 100-400 range
-    } else {
-      // Default range for other stocks
-      return Math.random() * 200 + 50; // 50-250 range
-    }
-  },
-
-  // Fetch live prices for multiple stocks
+  // Batched live prices for many stocks (50 tokens per request per exchange)
   async getLivePrices(stocks) {
     try {
-      const pricePromises = stocks.map(async (stock) => {
-        // Extract symbol token if available
-        const symbolToken = stock.symbolToken || null;
-        return this.getLivePrice(stock.symbol, stock.exchange || 'NSE', symbolToken);
+      // Resolve tokens per stock
+      const withTokens = await Promise.all(stocks.map(async (s) => {
+        const token = s.symbolToken || await (await import('../services/instrumentsService')).default.getSymbolToken(s.symbol, s.exchange || 'NSE');
+        return { ...s, symbolToken: token };
+      }));
+
+      // Group by exchange
+      const exchangeToTokens = {};
+      withTokens.forEach(s => {
+        const ex = (s.exchange || 'NSE').toUpperCase();
+        if (!s.symbolToken) return;
+        if (!exchangeToTokens[ex]) exchangeToTokens[ex] = new Set();
+        exchangeToTokens[ex].add(s.symbolToken);
       });
-      const prices = await Promise.all(pricePromises);
-      return prices;
+
+      const priceMap = {};
+
+      // For each exchange, batch tokens by 50
+      for (const [exchange, tokenSet] of Object.entries(exchangeToTokens)) {
+        const tokens = Array.from(tokenSet);
+        const batches = this._chunk(tokens, 50);
+        for (const batch of batches) {
+          try {
+            const results = await this.fetchFromAngelAPI(exchange, batch);
+            results.forEach(r => {
+              // Map by token and by symbol
+              if (r.symbolToken) priceMap[r.symbolToken] = r;
+              if (r.symbol) priceMap[r.symbol] = r;
+            });
+          } catch (e) {
+            console.error(`Batch fetch error for ${exchange}:`, e);
+          }
+        }
+      }
+
+      // Return results in array form for callers
+      return Object.values(priceMap);
     } catch (error) {
-      console.error('Error fetching live prices:', error);
+      console.error('Error fetching live prices (batched):', error);
       return [];
     }
   },
 
-  // Update stock prices for watchlist
+  // Update stock prices for watchlist / holdings
   async updateStockPrices(stocks, watchlistId = null) {
     try {
       if (!stocks || stocks.length === 0) {
@@ -233,16 +221,19 @@ const smartApiService = {
 
       const updatedStocks = await this.getLivePrices(stocks);
       
-      // Create a map of symbol to price data
+      // Create a map of symbol and token to price data
       const priceMap = {};
       updatedStocks.forEach(price => {
-        priceMap[price.symbol] = price;
+        if (!price) return;
+        if (price.symbol) priceMap[price.symbol] = price;
+        if (price.symbolToken) priceMap[price.symbolToken] = price;
       });
       
       // Update stocks with live prices
       const result = stocks.map(stock => {
-        const livePrice = priceMap[stock.symbol];
+        const livePrice = priceMap[stock.symbol] || (stock.symbolToken ? priceMap[stock.symbolToken] : undefined);
         if (livePrice) {
+          console.log(`✅ Got live price for ${stock.symbol}: ${livePrice.lastPrice} (was ${stock.lastPrice})`);
           return {
             ...stock,
             lastPrice: livePrice.lastPrice,
@@ -255,6 +246,8 @@ const smartApiService = {
             close: livePrice.close,
             volume: livePrice.volume
           };
+        } else {
+          console.log(`❌ No live price found for ${stock.symbol} (token: ${stock.symbolToken})`);
         }
         return stock;
       });
@@ -264,7 +257,7 @@ const smartApiService = {
         try {
           const { watchlistService } = await import('./watchlistService');
           const priceUpdates = result
-            .filter(stock => priceMap[stock.symbol])
+            .filter(stock => (priceMap[stock.symbol] || (stock.symbolToken && priceMap[stock.symbolToken])))
             .map(stock => ({
               symbol: stock.symbol,
               lastPrice: stock.lastPrice,
@@ -294,23 +287,32 @@ const smartApiService = {
         return holdings;
       }
 
+      console.log('🔄 Updating prices for holdings:', holdings.length);
       const updatedHoldings = await this.updateStockPrices(holdings);
+      console.log('📊 Updated holdings from API:', updatedHoldings);
       
       // Calculate P&L for each holding and preserve average price
       const result = updatedHoldings.map(holding => {
+        // If lastPrice is still the same as averagePrice, it means price fetch failed
+        const priceFetched = holding.lastPrice !== holding.averagePrice;
+        console.log(`📈 ${holding.symbol}: lastPrice=${holding.lastPrice}, averagePrice=${holding.averagePrice}, priceFetched=${priceFetched}`);
+        
         const pnlData = this.calculatePnL(holding);
         return {
           ...holding,
           // Preserve the original average price (purchase price) - DO NOT overwrite it
           averagePrice: holding.averagePrice || 0,
+          // Only update lastPrice if we actually got a different price from API
+          lastPrice: priceFetched ? holding.lastPrice : holding.averagePrice,
           pnl: pnlData.pnl,
           pnlPercentage: pnlData.pnlPercentage,
           // Calculate amounts
           amountInvested: (holding.quantity || 0) * (holding.averagePrice || 0),
-          currentAmount: (holding.quantity || 0) * (holding.lastPrice || holding.averagePrice || 0)
+          currentAmount: (holding.quantity || 0) * (priceFetched ? holding.lastPrice : holding.averagePrice || 0)
         };
       });
 
+      console.log('✅ Final holdings with prices:', result);
       return result;
     } catch (error) {
       console.error('Error updating holdings prices:', error);
@@ -443,6 +445,89 @@ const smartApiService = {
     } catch (error) {
       console.error('Error refreshing access token:', error);
       throw error;
+    }
+  },
+
+  // Search scrip to get token and trading symbol/name from Angel API
+  async searchScrip(symbol, exchange = 'NSE') {
+    try {
+      if (!this.isApiConfigured()) {
+        return null;
+      }
+
+      const headers = this.getDynamicApiHeaders();
+      if (!headers) return null;
+
+      const payload = {
+        exchange: exchange.toUpperCase(),
+        searchscrip: symbol.toUpperCase()
+      };
+
+      const response = await fetch('https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data.status || !Array.isArray(data.data) || data.data.length === 0) {
+        return null;
+      }
+
+      // Prefer the exact EQ match if available, otherwise first result
+      const eqMatch = data.data.find(d => (d.tradingsymbol || '').toUpperCase().endsWith('-EQ')) || data.data[0];
+
+      return {
+        exchange: eqMatch.exchange,
+        tradingSymbol: (eqMatch.tradingsymbol || eqMatch.tradingsymb || '').replace('-EQ', ''),
+        symbolToken: (eqMatch.symboltoken || eqMatch.exchange_token || '').toString(),
+        name: eqMatch.name || symbol
+      };
+    } catch (error) {
+      console.error('searchScrip error:', error);
+      return null;
+    }
+  },
+
+  // Search scrips (return full list) to get tokens and trading symbols
+  async searchScripList(symbol, exchange = 'NSE') {
+    try {
+      if (!this.isApiConfigured()) {
+        return [];
+      }
+      const headers = this.getDynamicApiHeaders();
+      if (!headers) return [];
+
+      const payload = {
+        exchange: exchange.toUpperCase(),
+        searchscrip: (symbol || '').toUpperCase()
+      };
+
+      const response = await fetch('https://apiconnect.angelone.in/rest/secure/angelbroking/order/v1/searchScrip', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (!data.status || !Array.isArray(data.data)) {
+        return [];
+      }
+      return data.data.map(d => ({
+        exchange: d.exchange,
+        tradingSymbol: (d.tradingsymbol || d.tradingsymb || '').trim(),
+        symbolToken: (d.symboltoken || d.exchange_token || '').toString(),
+        name: d.name || ''
+      }));
+    } catch (error) {
+      console.error('searchScripList error:', error);
+      return [];
     }
   }
 };

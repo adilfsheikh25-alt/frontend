@@ -6,10 +6,33 @@ import {
   ChevronUp, Database
 } from 'lucide-react';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
-  ResponsiveContainer, PieChart as RechartsPieChart, Pie, 
-  Cell, BarChart, Bar, AreaChart, Area, ComposedChart
-} from 'recharts';
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip as ChartTooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+import { Line, Bar, Doughnut } from 'react-chartjs-2';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  ChartTooltip,
+  Legend,
+  Filler
+);
 import Holdings from './Holdings';
 import Watchlist from './Watchlist';
 import TestApi from './TestApi';
@@ -38,9 +61,11 @@ const Dashboard = ({ activeTab }) => {
   // Amount invested chart state
   const [amountInvestedData, setAmountInvestedData] = useState([]);
   const [selectedInvestmentPeriod, setSelectedInvestmentPeriod] = useState('monthly');
+  const [amountInvestedLineData, setAmountInvestedLineData] = useState([]);
+  const [highlightLabel, setHighlightLabel] = useState('Sat');
   
-  // Top movers chart state
-  const [topMoversData, setTopMoversData] = useState([]);
+  // Top performers chart state
+  const [topPerformersData, setTopPerformersData] = useState([]);
   const [marketIndices, setMarketIndices] = useState([]);
 
   // Generate section allocation data based on actual holdings
@@ -193,55 +218,91 @@ const Dashboard = ({ activeTab }) => {
     }
   };
 
-  // Generate top movers data from watchlist
-  const generateTopMoversData = (watchlistData) => {
+  // Line series data for "Amount Invested" card (styled like the reference image)
+  const generateAmountInvestedLineSeries = (period) => {
+    const baseInvestment = portfolioMetrics.totalInvestment || 0;
+    // Provide sensible defaults even if no data yet
+    const nominal = baseInvestment > 0 ? baseInvestment : 50000;
+
+    if (period === 'monthly') {
+      // Weekly series Mon-Sun as in the screenshot
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      // Create a gentle upward line with a noticeable jump on Saturday
+      return days.map((d, i) => ({
+        day: d,
+        value: Math.round(nominal * (0.7 + i * 0.05 + (d === 'Sat' ? 0.25 : 0)))
+      }));
+    } else {
+      // Yearly: 7 points to keep the visual similar and compact
+      const labels = ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov', 'Dec'];
+      return labels.map((label, i) => ({
+        day: label,
+        value: Math.round(nominal * (0.6 + i * 0.1))
+      }));
+    }
+  };
+
+  // Generate top performers data from watchlist strictly where LTP > priceAddedAt
+  const generateTopPerformersData = (watchlistData) => {
+    console.log('🔍 generateTopPerformersData called with:', watchlistData);
+    
     if (!watchlistData || watchlistData.length === 0) {
-      console.log('📈 No watchlist data available for top movers');
+      console.log('📈 No watchlist data available for top performers');
       return [];
     }
 
     // Flatten all stocks from all watchlists
-    const allStocks = watchlistData.flatMap(watchlist => 
-      (watchlist.stocks || []).map(stock => ({
+    const allStocks = watchlistData.flatMap(watchlist => {
+      console.log('🔍 Processing watchlist:', watchlist.name, 'stocks:', watchlist.stocks);
+      return (watchlist.stocks || []).map(stock => ({
         ...stock,
         watchlistName: watchlist.name
-      }))
-    );
+      }));
+    });
 
     console.log('📈 All stocks from watchlists:', allStocks.length, allStocks);
 
-    // Filter stocks where LTP > priceAddedAt and calculate gains
+    // Helper: sanitize numeric input like "₹1,234.56" or strings with spaces
+    const toNumber = (value) => {
+      if (value === null || value === undefined) return NaN;
+      const cleaned = String(value).replace(/[^0-9.\-]/g, '');
+      if (cleaned.trim() === '') return NaN;
+      return parseFloat(cleaned);
+    };
+
+    // Filter strictly: LTP > priceAddedAt, then compute gains
     const movers = allStocks
-      .filter(stock => {
-        const ltp = parseFloat(stock.lastPrice) || 0;
-        const addedPrice = parseFloat(stock.priceAddedAt) || 0;
-        const isMover = ltp > addedPrice && addedPrice > 0;
-        
-        console.log(`📈 Stock ${stock.symbol}: LTP=${ltp}, AddedPrice=${addedPrice}, IsMover=${isMover}`);
-        
-        return isMover;
-      })
       .map(stock => {
-        const ltp = parseFloat(stock.lastPrice) || 0;
-        const addedPrice = parseFloat(stock.priceAddedAt) || 0;
+        const ltp = toNumber(stock.lastPrice);
+        const addedPrice = toNumber(stock.priceAddedAt);
+        
+        console.log(`🔍 Debug ${stock.symbol}: LTP=${ltp}, AddedPrice=${addedPrice}, RawLTP=${stock.lastPrice}, RawAddedPrice=${stock.priceAddedAt}`);
+        
+        if (isNaN(ltp) || isNaN(addedPrice) || addedPrice <= 0 || ltp <= addedPrice) {
+          console.log(`❌ Filtered out ${stock.symbol}: LTP=${ltp}, AddedPrice=${addedPrice}, Valid=${!isNaN(ltp) && !isNaN(addedPrice) && addedPrice > 0 && ltp > addedPrice}`);
+          return null;
+        }
+        
         const gain = ltp - addedPrice;
-        const gainPercentage = ((ltp - addedPrice) / addedPrice) * 100;
+        const gainPercentage = (gain / addedPrice) * 100;
+        console.log(`✅ Valid mover ${stock.symbol}: Gain=${gain}, Gain%=${gainPercentage}`);
         
         return {
           symbol: stock.symbol,
           name: stock.name,
-          addedPrice: addedPrice,
+          addedPrice,
           currentPrice: ltp,
-          gain: gain,
-          gainPercentage: gainPercentage,
+          gain,
+          gainPercentage,
           watchlistName: stock.watchlistName,
-          color: gainPercentage > 20 ? '#10B981' : gainPercentage > 10 ? '#3B82F6' : '#F59E0B'
+          color: '#10B981'
         };
       })
+      .filter(Boolean)
       .sort((a, b) => b.gainPercentage - a.gainPercentage)
       .slice(0, 8); // Top 8 movers
 
-    console.log('📈 Top movers found:', movers.length, movers);
+    console.log('📈 Top performers found:', movers.length, movers);
     return movers;
   };
 
@@ -249,6 +310,9 @@ const Dashboard = ({ activeTab }) => {
   useEffect(() => {
     setPortfolioPerformanceData(generatePortfolioPerformanceData(selectedTimePeriod));
     setAmountInvestedData(generateAmountInvestedData(selectedInvestmentPeriod));
+    setAmountInvestedLineData(generateAmountInvestedLineSeries(selectedInvestmentPeriod));
+    // Keep highlight consistent with weekly example
+    setHighlightLabel(selectedInvestmentPeriod === 'monthly' ? 'Sat' : 'Nov');
   }, [portfolioMetrics, selectedTimePeriod, selectedInvestmentPeriod]);
 
   const fetchMarketIndices = async () => {
@@ -283,23 +347,28 @@ const Dashboard = ({ activeTab }) => {
       // Load watchlist data
       const watchlistsData = await watchlistService.getWatchlists();
       console.log('👀 Watchlists data loaded:', watchlistsData);
+      console.log('👀 Watchlists data type:', typeof watchlistsData, 'isArray:', Array.isArray(watchlistsData));
       setWatchlist(Array.isArray(watchlistsData) ? watchlistsData : []);
       
-      // Update watchlist stocks with live prices for accurate top movers calculation
+      // Update watchlist stocks with live prices for accurate top performers calculation
       const enrichedWatchlists = await Promise.all(
         (watchlistsData || []).map(async (watchlist) => {
+          console.log('🔍 Processing watchlist for enrichment:', watchlist.name, 'stocks count:', watchlist.stocks?.length);
           if (watchlist.stocks && watchlist.stocks.length > 0) {
             const updatedStocks = await smartApiService.updateStockPrices(watchlist.stocks, watchlist.id);
+            console.log('🔍 Updated stocks for', watchlist.name, ':', updatedStocks);
             return { ...watchlist, stocks: updatedStocks };
           }
           return watchlist;
         })
       );
       
-      // Generate top movers data with live prices
-      const moversData = generateTopMoversData(enrichedWatchlists);
-      console.log('📈 Top movers data generated:', moversData);
-      setTopMoversData(moversData);
+      console.log('🔍 Enriched watchlists:', enrichedWatchlists);
+      
+      // Generate top performers data with live prices
+      const performersData = generateTopPerformersData(enrichedWatchlists);
+      console.log('📈 Top performers data generated:', performersData);
+      setTopPerformersData(performersData);
       
       // Fetch market indices
       await fetchMarketIndices();
@@ -456,9 +525,9 @@ const Dashboard = ({ activeTab }) => {
     <div className="space-y-3">
       {/* Key Metrics Cards - Exact Image Design */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Portfolio Value Card - Linear Gradient with Cut-out Corner */}
+        {/* Portfolio Value Card */}
         <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{
-          background: 'linear-gradient(135deg, #020024 0%, #090979 50%, #00D4FF 100%)'
+          backgroundColor: '#d81159'
         }}>
           {/* Cut-out corner with icon */}
           <div className="absolute top-0 right-0 w-12 h-12 bg-[#f8fafc] rounded-bl-full flex items-start justify-end p-1.5">
@@ -508,8 +577,8 @@ const Dashboard = ({ activeTab }) => {
           </div>
         </div>
             
-        {/* Total Invested Card - Brown Background with Cut-out Corner */}
-        <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{ backgroundColor: '#806F48' }}>
+        {/* Total Invested Card */}
+        <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{ backgroundColor: '#0063FF' }}>
           {/* Cut-out corner with icon */}
           <div className="absolute top-0 right-0 w-12 h-12 bg-[#f8fafc] rounded-bl-full flex items-start justify-end p-1.5">
             <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
@@ -558,8 +627,8 @@ const Dashboard = ({ activeTab }) => {
           </div>
         </div>
             
-        {/* Total P&L Card - Menu Bar Color with Cut-out Corner */}
-        <div className="bg-[#cb102d] rounded-3xl shadow-lg p-4 relative overflow-hidden">
+        {/* Total P&L Card */}
+        <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{ backgroundColor: '#FCBA22' }}>
           {/* Cut-out corner with icon */}
           <div className="absolute top-0 right-0 w-12 h-12 bg-[#f8fafc] rounded-bl-full flex items-start justify-end p-1.5">
             <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
@@ -610,8 +679,8 @@ const Dashboard = ({ activeTab }) => {
           </div>
         </div>
 
-        {/* Daily Change Card - Golden Background with Cut-out Corner */}
-        <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{ backgroundColor: '#BEA566' }}>
+        {/* Daily Change Card */}
+        <div className="rounded-3xl shadow-lg p-4 relative overflow-hidden" style={{ backgroundColor: '#C80036' }}>
           {/* Cut-out corner with icon */}
           <div className="absolute top-0 right-0 w-12 h-12 bg-[#f8fafc] rounded-bl-full flex items-start justify-end p-1.5">
             <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
@@ -664,9 +733,9 @@ const Dashboard = ({ activeTab }) => {
       </div>
 
       {/* Charts Section - Enhanced Design */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Portfolio Performance Chart - Modern Design */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
           {/* Header with icons */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-3">
@@ -712,79 +781,108 @@ const Dashboard = ({ activeTab }) => {
           </div>
           
           {portfolioPerformanceData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <ComposedChart data={portfolioPerformanceData}>
-                <defs>
-                  <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#F7B801" stopOpacity={1}/>
-                    <stop offset="50%" stopColor="#C4AA69" stopOpacity={0.9}/>
-                    <stop offset="100%" stopColor="#D6B26A" stopOpacity={0.8}/>
-                  </linearGradient>
-                  <linearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#BEA566" stopOpacity={1}/>
-                    <stop offset="100%" stopColor="#F7B801" stopOpacity={0.9}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="0" stroke="#F3F4F6" />
-                <XAxis 
-                  dataKey="month" 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 13, fill: '#6B7280', fontWeight: 500 }}
-                  interval={0}
-                />
-                <YAxis 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: '#9CA3AF' }}
-                  tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
-                  domain={['dataMin - 1000', 'dataMax + 1000']}
-                />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    border: '1px solid #E5E7EB',
-                    borderRadius: '12px',
-                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                    padding: '12px 16px'
-                  }}
-                  labelStyle={{ 
-                    color: '#374151', 
-                    fontWeight: 600, 
-                    fontSize: '14px',
-                    marginBottom: '8px'
-                  }}
-                  formatter={(value, name) => [
-                    `₹${value.toLocaleString()}`,
-                    name === 'value' ? 'Portfolio Value' : 'Profit Trend'
-                  ]}
-                />
-                <Bar 
-                  dataKey="value" 
-                  fill="url(#barGradient)" 
-                  radius={[3, 3, 0, 0]}
-                  maxBarSize={25}
-                />
+            <div style={{ height: '200px' }}>
                 <Line 
-                  type="monotone" 
-                  dataKey="trend" 
-                  stroke="url(#lineGradient)" 
-                  strokeWidth={2}
-                  dot={{ 
-                    fill: '#F7B801', 
-                    strokeWidth: 2, 
-                    r: 3,
-                    stroke: 'white'
-                  }}
-                  activeDot={{ 
-                    r: 5, 
-                    stroke: '#F7B801', 
-                    strokeWidth: 2,
-                    fill: 'white'
-                  }}
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
+                data={{
+                  labels: portfolioPerformanceData.map(item => item.month),
+                  datasets: [
+                    {
+                      label: 'Portfolio Value',
+                      data: portfolioPerformanceData.map(item => item.value),
+                      borderColor: '#F7B801',
+                      backgroundColor: 'rgba(247, 184, 1, 0.1)',
+                      borderWidth: 3,
+                      fill: true,
+                      tension: 0.4,
+                      pointBackgroundColor: '#F7B801',
+                      pointBorderColor: '#ffffff',
+                      pointBorderWidth: 2,
+                      pointRadius: 5,
+                      pointHoverRadius: 7,
+                    },
+                    {
+                      label: 'Profit Trend',
+                      data: portfolioPerformanceData.map(item => item.trend),
+                      borderColor: '#BEA566',
+                      backgroundColor: 'rgba(190, 165, 102, 0.1)',
+                      borderWidth: 2,
+                      fill: false,
+                      tension: 0.4,
+                      pointBackgroundColor: '#BEA566',
+                      pointBorderColor: '#ffffff',
+                      pointBorderWidth: 2,
+                      pointRadius: 4,
+                      pointHoverRadius: 6,
+                    }
+                  ]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      display: true,
+                      position: 'top',
+                      labels: {
+                        usePointStyle: true,
+                        padding: 20,
+                        font: {
+                          size: 12,
+                          weight: '500'
+                        }
+                      }
+                    },
+                    tooltip: {
+                      backgroundColor: 'white',
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 12,
+                      displayColors: true,
+                      callbacks: {
+                        label: function(context) {
+                          return `${context.dataset.label}: ₹${context.parsed.y.toLocaleString()}`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: {
+                      grid: {
+                        display: false
+                      },
+                      ticks: {
+                        color: '#6B7280',
+                        font: {
+                          size: 12,
+                          weight: '500'
+                        }
+                      }
+                    },
+                    y: {
+                      grid: {
+                        color: '#F3F4F6',
+                        drawBorder: false
+                      },
+                      ticks: {
+                        color: '#9CA3AF',
+                        font: {
+                          size: 12
+                        },
+                        callback: function(value) {
+                          return `₹${(value / 1000).toFixed(0)}K`;
+                        }
+                      }
+                    }
+                  },
+                  interaction: {
+                    intersect: false,
+                    mode: 'index'
+                  }
+                }}
+              />
+            </div>
           ) : (
             <div className="flex items-center justify-center h-60">
               <div className="text-center">
@@ -797,45 +895,54 @@ const Dashboard = ({ activeTab }) => {
         </div>
 
         {/* Section Allocation Chart - Donut Chart based on image */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Section Allocation</h3>
           {sectionAllocationData.length > 0 ? (
             <div className="flex">
               <div className="w-1/2">
-                <ResponsiveContainer width="100%" height={200}>
-                  <RechartsPieChart>
-                    <Pie
-                      data={sectionAllocationData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={65}
-                      paddingAngle={1}
-                      dataKey="value"
-                    >
-                      {sectionAllocationData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip 
-                      contentStyle={{
+                <div style={{ height: '160px' }}>
+                  <Doughnut
+                    data={{
+                      labels: sectionAllocationData.map(item => item.name),
+                      datasets: [{
+                        data: sectionAllocationData.map(item => item.value),
+                        backgroundColor: sectionAllocationData.map(item => item.color),
+                        borderWidth: 0,
+                        cutout: '60%'
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: {
+                          display: false
+                        },
+                        tooltip: {
                         backgroundColor: '#1F2937',
-                        border: 'none',
-                        borderRadius: '8px',
-                        color: '#FFFFFF'
-                      }}
-                      formatter={(value) => [`${value}%`, 'Allocation']}
-                    />
-                  </RechartsPieChart>
-                </ResponsiveContainer>
+                          titleColor: '#FFFFFF',
+                          bodyColor: '#FFFFFF',
+                          borderColor: 'transparent',
+                          cornerRadius: 8,
+                          callbacks: {
+                            label: function(context) {
+                              return `${context.label}: ${context.parsed}%`;
+                            }
+                          }
+                        }
+                      },
+                      cutout: '60%'
+                    }}
+                  />
+                </div>
               </div>
               <div className="w-1/2 pl-4">
-                <div className="space-y-2 max-h-48 overflow-y-auto">
+                <div className="space-y-3 max-h-48 overflow-y-auto">
                   {sectionAllocationData.map((item, index) => (
-                    <div key={index} className="flex items-center justify-between p-2">
-                      <div className="flex items-center space-x-2">
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex items-center space-x-3">
                         <div 
-                          className="w-3 h-3 rounded-full" 
+                          className="w-4 h-4 rounded-full" 
                           style={{ backgroundColor: item.color }}
                         ></div>
                         <span className="text-sm font-medium text-gray-900">{item.name}</span>
@@ -859,119 +966,152 @@ const Dashboard = ({ activeTab }) => {
       </div>
 
       {/* Additional Charts Section - Enhanced */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-        {/* Amount Invested Chart - Based on provided image */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* Amount Invested Chart - Styled like reference (red line) */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
           {/* Header with icons */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center">
-                <DollarSign className="w-3 h-3 text-white" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center">
+                <DollarSign className="w-4 h-4 text-white" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900">Amount Invested</h3>
-              <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center">
-                <span className="text-xs text-gray-600">i</span>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Amount Invested</h3>
+                <p className="text-sm text-gray-500">Investment trend over time</p>
               </div>
             </div>
-            <div className="flex items-center space-x-1">
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <span className="text-xs text-gray-600">✏️</span>
+            <div className="flex items-center space-x-2">
+              <button className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
+                <span className="text-sm text-gray-600">✏️</span>
               </button>
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <BarChart3 className="w-3 h-3 text-gray-600" />
+              <button className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
+                <BarChart3 className="w-4 h-4 text-gray-600" />
               </button>
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <span className="text-xs text-gray-600">⋯</span>
+              <button className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
+                <span className="text-sm text-gray-600">⋯</span>
               </button>
             </div>
           </div>
 
           {/* Investment Amount Summary */}
-          <div className="grid grid-cols-2 gap-6 mb-6">
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Monthly Investment</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {amountInvestedData.length > 0 
-                  ? formatCurrency(amountInvestedData.filter(item => item.type === 'investment').reduce((sum, item) => sum + item.amount, 0))
-                  : formatCurrency(0)
-                }
+          <div className="grid grid-cols-2 gap-8 mb-8">
+            <div className="bg-gray-50 rounded-xl p-4">
+              <p className="text-sm text-gray-500 mb-2">Total Invested</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {formatCurrency(portfolioMetrics.totalInvestment)}
               </p>
+              <div className="flex items-center mt-2">
+                <span className="text-sm text-green-600 font-medium">+1.25%</span>
+                <TrendingUp className="w-4 h-4 text-green-600 ml-1" />
             </div>
-            <div>
-              <p className="text-sm text-gray-500 mb-1">Yearly Investment</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {amountInvestedData.length > 0 
-                  ? formatCurrency(amountInvestedData.filter(item => item.type === 'investment').reduce((sum, item) => sum + item.amount, 0) * 12)
-                  : formatCurrency(0)
-                }
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4">
+              <p className="text-sm text-gray-500 mb-2">Current Value</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {formatCurrency(portfolioMetrics.totalValue)}
               </p>
+              <div className="flex items-center mt-2">
+                <span className="text-sm text-green-600 font-medium">+2.4%</span>
+                <TrendingUp className="w-4 h-4 text-green-600 ml-1" />
+              </div>
             </div>
           </div>
 
-          {/* Waterfall Chart */}
-          <div className="h-64">
-            {amountInvestedData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={amountInvestedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <defs>
-                    {amountInvestedData.map((item, index) => (
-                      <linearGradient key={index} id={`waterfall-gradient-${index}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor={item.color} stopOpacity={1}/>
-                        <stop offset="100%" stopColor={item.color} stopOpacity={0.7}/>
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                  <XAxis 
-                    dataKey="stage" 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 11, fill: '#6B7280', angle: -45, textAnchor: 'end' }}
-                    interval={0}
-                  />
-                  <YAxis 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12, fill: '#6B7280' }}
-                    tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}K`}
-                    domain={[0, 'dataMax + 10000']}
-                  />
-                  <Tooltip 
-                    contentStyle={{
+          {/* Line Chart */}
+          <div className="h-48">
+            {amountInvestedLineData.length > 0 ? (
+              <Line
+                data={{
+                  labels: amountInvestedLineData.map(item => item.day),
+                  datasets: [{
+                    label: 'Amount Invested',
+                    data: amountInvestedLineData.map(item => item.value),
+                    borderColor: '#ff4d5a',
+                    backgroundColor: 'rgba(255, 77, 90, 0.1)',
+                    borderWidth: 4,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#ff4d5a',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 3,
+                    pointRadius: 5,
+                    pointHoverRadius: 8,
+                    pointHoverBackgroundColor: '#ff4d5a',
+                    pointHoverBorderColor: '#ffffff',
+                    pointHoverBorderWidth: 3
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      display: false
+                    },
+                    tooltip: {
                       backgroundColor: 'white',
-                      border: '1px solid #E5E7EB',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                      padding: '8px 12px'
-                    }}
-                    formatter={(value, name) => [
-                      formatCurrency(value),
-                      name === 'amount' ? 'Amount' : 'Cumulative'
-                    ]}
-                  />
-                  <Bar dataKey="cumulative" radius={[2, 2, 0, 0]} maxBarSize={25}>
-                    {amountInvestedData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={`url(#waterfall-gradient-${index})`}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 12,
+                      displayColors: true,
+                      callbacks: {
+                        label: function(context) {
+                          return `Amount Invested: ${formatCurrency(context.parsed.y)}`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: {
+                      grid: {
+                        display: false
+                      },
+                      ticks: {
+                        color: '#6B7280',
+                        font: {
+                          size: 14,
+                          weight: '500'
+                        }
+                      }
+                    },
+                    y: {
+                      grid: {
+                        color: '#F3F4F6',
+                        drawBorder: false
+                      },
+                      ticks: {
+                        color: '#9CA3AF',
+                        font: {
+                          size: 14,
+                          weight: '500'
+                        },
+                        callback: function(value) {
+                          return `₹${(value / 1000).toFixed(0)}K`;
+                        }
+                      }
+                    }
+                  },
+                  interaction: {
+                    intersect: false,
+                    mode: 'index'
+                  }
+                }}
+              />
             ) : (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <Database className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-500 text-lg font-medium">No Investment Data</p>
-                  <p className="text-gray-400 text-sm">Add holdings to see investment breakdown</p>
+                  <p className="text-gray-400 text-sm">Add holdings to see investment trend</p>
                 </div>
               </div>
             )}
           </div>
 
           {/* Period Filter Buttons */}
-          <div className="flex space-x-2 mt-4">
+          <div className="flex space-x-3 mt-6">
             {[
               { key: 'monthly', label: 'Monthly' },
               { key: 'yearly', label: 'Yearly' }
@@ -979,9 +1119,9 @@ const Dashboard = ({ activeTab }) => {
               <button
                 key={period.key}
                 onClick={() => setSelectedInvestmentPeriod(period.key)}
-                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
+                className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
                   selectedInvestmentPeriod === period.key
-                    ? 'bg-blue-500 text-white'
+                    ? 'bg-red-500 text-white shadow-md'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
@@ -991,15 +1131,15 @@ const Dashboard = ({ activeTab }) => {
           </div>
         </div>
 
-        {/* Top Movers Chart - From Watchlist */}
-        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+        {/* Top Performers from Watchlist */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
           {/* Header with icons */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center space-x-2">
               <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center">
                 <TrendingUp className="w-3 h-3 text-white" />
               </div>
-              <h3 className="text-lg font-bold text-gray-900">Top Movers</h3>
+              <h3 className="text-lg font-bold text-gray-900">Top Performers</h3>
               <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center">
                 <span className="text-xs text-gray-600">i</span>
               </div>
@@ -1019,97 +1159,47 @@ const Dashboard = ({ activeTab }) => {
 
           {/* Summary */}
           <div className="mb-4">
-            <p className="text-sm text-gray-500 mb-1">Stocks with LTP &gt; Added Price</p>
+            <p className="text-sm text-gray-500 mb-1">Best performing stocks from watchlist</p>
             <p className="text-2xl font-bold text-gray-900">
-              {topMoversData.length} Stocks
+              {topPerformersData.length} Stocks
             </p>
           </div>
 
-          {/* Top Movers Chart */}
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topMoversData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                <defs>
-                  {topMoversData.map((item, index) => (
-                    <linearGradient key={index} id={`mover-gradient-${index}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={item.color} stopOpacity={1}/>
-                      <stop offset="100%" stopColor={item.color} stopOpacity={0.7}/>
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
-                <XAxis 
-                  dataKey="symbol" 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11, fill: '#6B7280' }}
-                  interval={0}
-                />
-                <YAxis 
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 12, fill: '#6B7280' }}
-                  tickFormatter={(value) => `${value.toFixed(1)}%`}
-                />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'white',
-                    border: '1px solid #E5E7EB',
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-                    padding: '8px 12px'
-                  }}
-                  formatter={(value, name) => [
-                    `${value.toFixed(2)}%`,
-                    'Gain %'
-                  ]}
-                  labelFormatter={(label) => `Stock: ${label}`}
-                />
-                <Bar dataKey="gainPercentage" radius={[2, 2, 0, 0]} maxBarSize={20}>
-                  {topMoversData.map((entry, index) => (
-                    <Cell 
-                      key={`cell-${index}`} 
-                      fill={`url(#mover-gradient-${index})`}
-                    />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Top Movers List */}
-          {topMoversData.length > 0 ? (
-            <div className="mt-4 space-y-2">
-              <h4 className="text-sm font-bold text-gray-900 mb-2">Top Performers</h4>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {topMoversData.slice(0, 5).map((mover, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: mover.color }}></div>
-                      <div>
-                        <span className="font-medium text-gray-900 text-sm">{mover.symbol}</span>
-                        <p className="text-xs text-gray-500">{mover.name}</p>
-                      </div>
+          {/* Top Performers List */}
+          {topPerformersData.length > 0 ? (
+            <div className="space-y-3">
+              {topPerformersData.slice(0, 10).map((mover, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <span className="text-sm font-bold text-green-600">#{index + 1}</span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-sm font-bold text-gray-900">+{mover.gainPercentage.toFixed(1)}%</span>
-                      <p className="text-xs text-gray-500">{formatCurrency(mover.gain)}</p>
+                    <div>
+                      <span className="font-medium text-gray-900 text-sm">{mover.symbol}</span>
+                      <p className="text-xs text-gray-500">{mover.name}</p>
                     </div>
                   </div>
-                ))}
-              </div>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-green-600">+{mover.gainPercentage.toFixed(1)}%</span>
+                    <p className="text-xs text-gray-500">{formatCurrency(mover.gain)}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg text-center">
-              <p className="text-sm text-gray-500">No stocks found where current price &gt; added price</p>
-              <p className="text-xs text-gray-400 mt-1">Add stocks to watchlist with live prices to see movers</p>
+            <div className="text-center py-8 text-gray-500">
+              <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
+                <TrendingUp className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-sm">No top performers found</p>
+              <p className="text-xs text-gray-400 mt-1">Add stocks to your watchlist to see top performers</p>
             </div>
           )}
         </div>
       </div>
 
       {/* Top Performers Section - Financial Statements Style */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
@@ -1135,7 +1225,7 @@ const Dashboard = ({ activeTab }) => {
         </div>
 
         {/* Main Financial Metrics */}
-        <div className="grid grid-cols-2 gap-6 mb-6">
+        <div className="grid grid-cols-2 gap-8 mb-8">
           <div>
             <p className="text-sm text-gray-500 mb-1">Total Gain</p>
             <p className="text-2xl font-bold text-gray-900">
@@ -1154,34 +1244,44 @@ const Dashboard = ({ activeTab }) => {
         <div className="flex">
           {/* Donut Chart (Left Column) */}
           <div className="w-1/2">
-            <ResponsiveContainer width="100%" height={180}>
-              <RechartsPieChart>
-                <Pie
-                  data={[
-                    { name: 'Gainers', value: portfolioMetrics.topGainer?.pnl || 0, color: '#F59E0B' },
-                    { name: 'Losers', value: Math.abs(portfolioMetrics.topLoser?.pnl || 0), color: '#06B6D4' }
-                  ]}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={55}
-                  outerRadius={75}
-                  paddingAngle={1}
-                  dataKey="value"
-                >
-                  <Cell fill="#F59E0B" />
-                  <Cell fill="#06B6D4" />
-                </Pie>
-                <Tooltip 
-                  contentStyle={{
+            <div style={{ height: '140px' }}>
+              <Doughnut
+                data={{
+                  labels: ['Gainers', 'Losers'],
+                  datasets: [{
+                    data: [
+                      portfolioMetrics.topGainer?.pnl || 0,
+                      Math.abs(portfolioMetrics.topLoser?.pnl || 0)
+                    ],
+                    backgroundColor: ['#F59E0B', '#06B6D4'],
+                    borderWidth: 0,
+                    cutout: '70%'
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      display: false
+                    },
+                    tooltip: {
                     backgroundColor: '#1F2937',
-                    border: 'none',
-                    borderRadius: '8px',
-                    color: '#FFFFFF'
-                  }}
-                  formatter={(value) => [formatCurrency(value), 'Amount']}
-                />
-              </RechartsPieChart>
-            </ResponsiveContainer>
+                      titleColor: '#FFFFFF',
+                      bodyColor: '#FFFFFF',
+                      borderColor: 'transparent',
+                      cornerRadius: 8,
+                      callbacks: {
+                        label: function(context) {
+                          return `${context.label}: ${formatCurrency(context.parsed)}`;
+                        }
+                      }
+                    }
+                  },
+                  cutout: '70%'
+                }}
+              />
+            </div>
           </div>
 
           {/* Performance List (Right Column) */}
@@ -1246,7 +1346,7 @@ const Dashboard = ({ activeTab }) => {
       </div>
 
       {/* Market Summary Section */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4">
+      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
         <h3 className="text-lg font-bold text-gray-900 mb-4">Market Summary</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {marketIndices.length > 0 ? (
@@ -1367,13 +1467,13 @@ const Dashboard = ({ activeTab }) => {
   };
 
   return (
-    <div className="bg-white">
+    <div style={{ backgroundColor: '#F3F8FF' }}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {/* Dashboard Header */}
         <div className="mb-4">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Portfolio Dashboard</h1>
+              <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
             </div>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 text-sm text-gray-500">

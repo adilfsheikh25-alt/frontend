@@ -88,7 +88,7 @@ const AnalyticsDashboard = ({ holdings, watchlist }) => {
     <div className="space-y-6 pt-6">
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white">
+        <div className="rounded-xl p-6 text-white" style={{ backgroundColor: '#d81159' }}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-blue-100 text-sm font-medium">Portfolio Value</p>
@@ -101,7 +101,7 @@ const AnalyticsDashboard = ({ holdings, watchlist }) => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-6 text-white">
+        <div className="rounded-xl p-6 text-white" style={{ backgroundColor: '#0063FF' }}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-green-100 text-sm font-medium">Total P&L</p>
@@ -114,7 +114,7 @@ const AnalyticsDashboard = ({ holdings, watchlist }) => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-6 text-white">
+        <div className="rounded-xl p-6 text-white" style={{ backgroundColor: '#FCBA22' }}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-purple-100 text-sm font-medium">Daily Change</p>
@@ -127,7 +127,7 @@ const AnalyticsDashboard = ({ holdings, watchlist }) => {
           </div>
         </div>
 
-        <div className="bg-gradient-to-r from-orange-500 to-orange-600 rounded-xl p-6 text-white">
+        <div className="rounded-xl p-6 text-white" style={{ backgroundColor: '#C80036' }}>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-orange-100 text-sm font-medium">Holdings</p>

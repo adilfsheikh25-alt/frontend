@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Edit, Download, Upload, FileText, RefreshCw, TrendingUp, Play, Pause, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Edit, Download, Upload, FileText, RefreshCw, TrendingUp, Play, Pause, Clock, CheckCircle, AlertCircle, ChevronUp, ChevronDown } from 'lucide-react';
 import AddStockDialog from './AddStockDialog';
 import { holdingsService } from '../services/holdingsService';
 import smartApiService from '../services/smartApiService';
 import autoRefreshService from '../services/autoRefreshService';
 import instrumentsService from '../services/instrumentsService';
-import { generateHoldingsTemplate } from '../utils/excelUtils';
+import { generateHoldingsTemplate, importHoldings } from '../utils/excelUtils';
+  const sanitizeSymbol = (text) => {
+    return (text || '')
+      .toString()
+      .replace(/\uFFFD|�/g, '')
+      .replace(/[^A-Za-z0-9_.-]/g, '')
+      .trim()
+      .toUpperCase();
+  };
 
 // Utility function to get company name from instruments data
 const getCompanyNameFromSymbol = async (symbol, exchange = 'NSE') => {
@@ -27,6 +35,7 @@ const Holdings = () => {
   const [importQueue, setImportQueue] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
   const [currentImportIndex, setCurrentImportIndex] = useState(0);
+  const [sortConfig, setSortConfig] = useState({ key: '', direction: 'asc' });
 
   // Load holdings on component mount
   useEffect(() => {
@@ -172,7 +181,7 @@ const Holdings = () => {
       
       // Ensure all required fields are properly mapped
       const holdingData = {
-        symbol: stockData.symbol?.toUpperCase(),
+        symbol: sanitizeSymbol(stockData.symbol),
         name: stockData.name,
         quantity: parseInt(stockData.quantity) || 0,
         averagePrice: parseFloat(stockData.averagePrice) || 0,
@@ -333,13 +342,17 @@ const Holdings = () => {
       // Create updated holding data
       const updatedHolding = {
         ...editingStock,
-        symbol: stockData.symbol?.toUpperCase().trim(),
+        symbol: sanitizeSymbol(stockData.symbol),
         name: stockData.name?.trim() || stockData.symbol?.toUpperCase().trim(),
         quantity: Math.max(0, parseInt(stockData.quantity) || 0),
         averagePrice: Math.max(0, parseFloat(stockData.averagePrice) || 0),
         lastPrice: parseFloat(stockData.lastPrice || stockData.averagePrice) || 0,
         exchange: stockData.exchange || 'NSE',
         symbolToken: stockData.symbolToken?.trim() || '',
+        // Preserve priceAddedAt if not provided to satisfy backend NOT NULL
+        priceAddedAt: (stockData.priceAddedAt !== undefined && stockData.priceAddedAt !== null)
+          ? stockData.priceAddedAt
+          : (editingStock.priceAddedAt || ''),
         addedDate: stockData.addedDate || new Date().toISOString().split('T')[0],
         updatedAt: new Date().toISOString()
       };
@@ -441,84 +454,141 @@ const Holdings = () => {
       return;
     }
     
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      try {
-        const csv = e.target.result;
-        const lines = csv.split('\n');
-        const headers = lines[0].split(',');
-        
-        const importedHoldings = [];
-        
-        for (let i = 1; i < lines.length; i++) {
-          if (lines[i].trim()) {
-            const values = lines[i].split(',');
-            const symbol = values[0]?.trim();
-            const exchange = values[1]?.trim() || 'NSE';
-            
-            if (symbol) {
-              // Get company name from instruments data if not provided in CSV
-              let name = values[1]?.trim();
-              if (!name || name === exchange) {
-                name = await getCompanyNameFromSymbol(symbol, exchange);
-              }
-              
-              // Handle both old and new CSV formats
-              if (headers.length >= 5 && headers[3]?.includes('Purchase Price')) {
-                // New format with Amount Invested and Current Amount
-                const quantity = parseInt(values[2]) || 0;
-                const averagePrice = parseFloat(values[3]) || 0;
-                const lastPrice = parseFloat(values[5]) || parseFloat(values[3]) || 0;
-                
-                if (quantity > 0) {
-                  importedHoldings.push({
-                    symbol: symbol,
-                    name: name,
-                    exchange: exchange, // Include exchange field
-                    quantity: quantity,
-                    averagePrice: averagePrice,
-                    lastPrice: lastPrice,
-                    addedDate: new Date().toISOString().split('T')[0],
-                    amountInvested: quantity * averagePrice,
-                    currentAmount: quantity * lastPrice
-                  });
-                }
-              } else {
-                // Old format (backward compatibility)
-                const quantity = parseInt(values[2]) || 0;
-                const averagePrice = parseFloat(values[3]) || 0;
-                const lastPrice = parseFloat(values[3]) || 0;
-                
-                if (quantity > 0) {
-                  importedHoldings.push({
-                    symbol: symbol,
-                    name: name,
-                    exchange: exchange, // Include exchange field
-                    quantity: quantity,
-                    averagePrice: averagePrice,
-                    lastPrice: lastPrice,
-                    addedDate: values[4]?.trim() || new Date().toISOString().split('T')[0],
-                    amountInvested: quantity * averagePrice,
-                    currentAmount: quantity * lastPrice
-                  });
-                }
-              }
-            }
-          }
-        }
+    console.log('✅ Holdings: File validation passed, proceeding with enhanced import...');
+    
+    // Use the enhanced import function that automatically fetches names and LTP prices
+    importHoldings(
+      file,
+      async (importedHoldings) => {
+        console.log('✅ Holdings: Enhanced import successful, imported holdings:', importedHoldings);
         
         if (importedHoldings.length > 0) {
-          // Start import process with dialog
-          setImportQueue(importedHoldings);
-          setCurrentImportIndex(0);
-          setIsImporting(true);
-          setShowAddDialog(true);
+          // Add all holdings directly to database (like direct import)
+          await handleDirectImport(importedHoldings);
+        }
+      },
+      (error) => {
+        console.error('❌ Holdings: Enhanced import failed:', error);
+        console.error('Error importing CSV file:', error);
+      }
+    );
+  };
+
+  // Handle direct import (add all holdings at once and refresh)
+  const handleDirectImport = async (importedHoldings) => {
+    if (importedHoldings.length === 0) return;
+    
+    console.log('🔄 Direct Holdings Import: Adding all imported holdings:', importedHoldings);
+    
+    try {
+      const addedHoldings = [];
+      let successCount = 0;
+      let failCount = 0;
+      
+      // Add all imported holdings
+      for (let i = 0; i < importedHoldings.length; i++) {
+        const holdingData = importedHoldings[i];
+        console.log(`🔄 Direct Holdings Import: Adding holding ${i + 1}/${importedHoldings.length}:`, holdingData);
+        
+        // Validate required fields
+        if (!holdingData.symbol || !holdingData.symbol.trim()) {
+          console.warn(`⚠️ Direct Holdings Import: Skipping holding ${i + 1}/${importedHoldings.length} - missing symbol`);
+          continue;
+        }
+        
+        if (!holdingData.name || !holdingData.name.trim()) {
+          console.warn(`⚠️ Direct Holdings Import: Skipping holding ${i + 1}/${importedHoldings.length} (${holdingData.symbol}) - missing name`);
+          continue;
+        }
+        
+        if (!holdingData.quantity || holdingData.quantity <= 0) {
+          console.warn(`⚠️ Direct Holdings Import: Skipping holding ${i + 1}/${importedHoldings.length} (${holdingData.symbol}) - invalid quantity`);
+          continue;
+        }
+        
+        // Process the holding data
+        const processedHoldingData = {
+          symbol: holdingData.symbol?.toUpperCase().trim(),
+          name: holdingData.name?.trim(),
+          quantity: parseInt(holdingData.quantity) || 0,
+          averagePrice: parseFloat(holdingData.averagePrice) || 0,
+          lastPrice: parseFloat(holdingData.averagePrice) || 0, // Set initial lastPrice to purchase price
+          exchange: holdingData.exchange || 'NSE',
+          symbolToken: holdingData.symbolToken || '',
+          addedDate: holdingData.addedDate,
+          amountInvested: (parseInt(holdingData.quantity) || 0) * (parseFloat(holdingData.averagePrice) || 0),
+          currentAmount: (parseInt(holdingData.quantity) || 0) * (parseFloat(holdingData.averagePrice) || 0)
+        };
+        
+        // Ensure the date is in YYYY-MM-DD format for database compatibility
+        if (processedHoldingData.addedDate) {
+          if (processedHoldingData.addedDate.includes('/')) {
+            // Convert from DD/MM/YYYY to YYYY-MM-DD
+            const [day, month, year] = processedHoldingData.addedDate.split('/');
+            processedHoldingData.addedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          } else if (processedHoldingData.addedDate.includes('-')) {
+            // Already in YYYY-MM-DD format, ensure proper padding
+            const [year, month, day] = processedHoldingData.addedDate.split('-');
+            processedHoldingData.addedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+              } else {
+          // Set default date if none provided
+          processedHoldingData.addedDate = new Date().toISOString().split('T')[0];
+        }
+        
+        try {
+          console.log(`🔄 Direct Holdings Import: Attempting to add holding ${i + 1}/${importedHoldings.length}: ${holdingData.symbol}`);
+          console.log(`🔄 Direct Holdings Import: Processed holding data:`, processedHoldingData);
+          
+          const newHolding = await holdingsService.addHolding(processedHoldingData);
+          
+          if (newHolding) {
+            addedHoldings.push(newHolding);
+            successCount++;
+            console.log(`✅ Direct Holdings Import: Added holding ${i + 1}/${importedHoldings.length}: ${holdingData.symbol}`, newHolding);
+          } else {
+            failCount++;
+            console.error(`❌ Direct Holdings Import: Failed to add holding ${i + 1}/${importedHoldings.length}: ${holdingData.symbol} - No holding returned from service`);
+          }
+        } catch (holdingError) {
+          // Check if it's a duplicate holding error
+          if (holdingError.message && holdingError.message.includes('already exists')) {
+            console.warn(`⚠️ Direct Holdings Import: Skipping duplicate holding ${holdingData.symbol} - already exists in holdings`);
+            // Don't count duplicates as failures, just skip them
+          } else {
+            failCount++;
+            console.error(`❌ Direct Holdings Import: Error adding holding ${holdingData.symbol}:`, holdingError);
+          }
+        }
+      }
+      
+      // Update state with all added holdings at once
+      if (addedHoldings.length > 0) {
+        setHoldings(prev => {
+          const newHoldings = [...prev, ...addedHoldings];
+          console.log(`✅ Direct Holdings Import: Updated holdings state. Previous count: ${prev.length}, Added: ${addedHoldings.length}, New total: ${newHoldings.length}`);
+          return newHoldings;
+        });
+        console.log(`✅ Direct Holdings Import: Successfully added ${addedHoldings.length} holdings to state`);
+      }
+      
+      // Force a refresh of holdings from the database to get live prices
+      setTimeout(() => {
+        console.log('🔄 Direct Holdings Import: Refreshing holdings from database to get live prices...');
+        loadHoldings();
+      }, 100);
+      
+      // Show completion message
+      const totalProcessed = successCount + failCount;
+      if (failCount > 0) {
+        console.log(`Direct Holdings Import complete! Successfully added ${successCount} out of ${totalProcessed} holdings. ${failCount} holdings failed to import.`);
+      } else {
+        console.log(`Direct Holdings Import complete! Successfully added ${successCount} holdings.`);
         }
       } catch (error) {
-        console.error('Error importing CSV:', error);
+      console.error('❌ Direct Holdings Import: Error adding holdings:', error);
+      console.error(`Error adding holdings: ${error.message || 'Unknown error'}`);
       }
-    };
-    reader.readAsText(file);
   };
 
   const handleExport = () => {
@@ -681,6 +751,44 @@ const Holdings = () => {
            name.toLowerCase().includes(searchTerm.toLowerCase());
   }) : [];
 
+  const sortedHoldings = React.useMemo(() => {
+    if (!sortConfig.key) return filteredHoldings;
+    const key = sortConfig.key;
+    const dir = sortConfig.direction === 'asc' ? 1 : -1;
+    const clone = [...filteredHoldings];
+    clone.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      const an = parseFloat(av);
+      const bn = parseFloat(bv);
+      if (!isNaN(an) && !isNaN(bn)) return (an - bn) * dir;
+      return String(av || '').localeCompare(String(bv || '')) * dir;
+    });
+    return clone;
+  }, [filteredHoldings, sortConfig]);
+
+  const requestSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+      }
+      return { key, direction: 'asc' };
+    });
+  };
+
+  const SortHeader = ({ label, sortKey }) => (
+    <button onClick={() => requestSort(sortKey)} className="flex items-center space-x-1 text-left">
+      <span className="text-xs font-medium text-black uppercase tracking-wider">{label}</span>
+      <span className="text-gray-400">
+        {sortConfig.key === sortKey ? (
+          sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronUp className="w-3 h-3 opacity-40" />
+        )}
+      </span>
+    </button>
+  );
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -713,14 +821,14 @@ const Holdings = () => {
       )}
       
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-800 mb-4">Holdings</h1>
+      <div className="mb-8" style={{ backgroundColor: '#EEF4F7' }}>
+        <h1 className="text-3xl font-bold text-black mb-4">Holdings</h1>
         
         {/* Summary Cards */}
         {summary && Array.isArray(holdings) && holdings.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
             {/* Total Holdings Card */}
-            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#F7B801' }}>
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#d81159' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -741,9 +849,7 @@ const Holdings = () => {
             </div>
 
             {/* Total Value Card */}
-            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{
-              background: 'linear-gradient(135deg, #020024 0%, #090979 50%, #00D4FF 100%)'
-            }}>
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#0063FF' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -764,7 +870,7 @@ const Holdings = () => {
             </div>
 
             {/* Total Invested Card */}
-            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#806F48' }}>
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#FCBA22' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -785,7 +891,7 @@ const Holdings = () => {
             </div>
 
             {/* Total P&L Card */}
-            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#BEA566' }}>
+            <div className="relative rounded-3xl shadow-lg overflow-hidden" style={{ backgroundColor: '#C80036' }}>
               {/* Cut-out corner with icon */}
               <div className="absolute top-0 right-0 w-12 h-12 bg-white rounded-bl-full flex items-start justify-end p-1.5">
                 <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center">
@@ -823,9 +929,10 @@ const Holdings = () => {
           <button
               onClick={() => setShowAddDialog(true)}
               disabled={isEditing}
-              className={`flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors ${
+              className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors ${
                 isEditing ? 'opacity-50 cursor-not-allowed' : ''
               }`}
+              style={{ backgroundColor: '#84994F' }}
           >
               <Plus className="w-4 h-4" />
               <span>Add Holding</span>
@@ -836,7 +943,8 @@ const Holdings = () => {
               <button
                 onClick={handleSync}
                 disabled={!Array.isArray(holdings) || holdings.length === 0 || isEditing}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ backgroundColor: '#FFE797' }}
               >
                 <TrendingUp className="w-4 h-4" />
                 <span>Refresh Prices</span>
@@ -865,7 +973,8 @@ const Holdings = () => {
             <button
               onClick={handleRecalculate}
               disabled={!Array.isArray(holdings) || holdings.length === 0 || isEditing}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#FCB53B' }}
             >
               <RefreshCw className="w-4 h-4" />
               <span>Recalculate Amounts</span>
@@ -874,7 +983,8 @@ const Holdings = () => {
             <button
               onClick={handleExport}
               disabled={!Array.isArray(holdings) || holdings.length === 0 || isEditing}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#84994F' }}
             >
               <Download className="w-4 h-4" />
               <span>Export CSV</span>
@@ -883,15 +993,16 @@ const Holdings = () => {
             <button
               onClick={generateHoldingsTemplate}
               disabled={isEditing}
-              className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-gray-900 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#FCB53B' }}
             >
               <Download className="w-4 h-4" />
               <span>Demo CSV</span>
             </button>
             
-            <label className={`flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ${
+            <label className={`flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors ${
               isEditing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-            }`}>
+            }`} style={{ backgroundColor: '#B45253' }}>
               <Upload className="w-4 h-4" />
               <span>Import</span>
               <input
@@ -908,7 +1019,8 @@ const Holdings = () => {
             <button
               onClick={handleClearHoldings}
               disabled={!Array.isArray(holdings) || holdings.length === 0 || isEditing}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center space-x-2 px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: '#B45253' }}
             >
               <Trash2 className="w-4 h-4" />
               <span>Clear All</span>
@@ -938,38 +1050,38 @@ const Holdings = () => {
             </p>
           </div>
         ) : (
-        <div>
+        <div className="overflow-y-auto max-h-[70vh]">
             <table className="w-full">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Symbol</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Quantity</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Purchase Price</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Amount Invested</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">LTP</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Current Amount</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Change</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">P&L</th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Symbol" sortKey="symbol" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Name" sortKey="name" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Qty" sortKey="quantity" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Avg Buy Price" sortKey="averagePrice" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Invested Amount" sortKey="amountInvested" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="LTP" sortKey="lastPrice" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Current Amount" sortKey="currentAmount" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="Change" sortKey="change" /></th>
+                  <th className="px-4 py-3 text-left"><SortHeader label="P&L" sortKey="pnl" /></th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-black uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredHoldings.map((holding, index) => (
+              {sortedHoldings.map((holding, index) => (
                   <tr key={holding.id || `holding-${index}`} className="hover:bg-gray-50">
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">{holding.symbol}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{holding.name}</div>
+                  <td className="px-4 py-2">
+                      <div className="text-sm text-gray-900 max-w-xs">{holding.name || holding.symbol}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">{holding.quantity}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">₹{holding.averagePrice || 'N/A'}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">₹{(() => {
                         // Use database value if available, otherwise calculate
                         if (holding.amountInvested !== undefined && holding.amountInvested !== null) {
@@ -980,10 +1092,10 @@ const Holdings = () => {
                         return amount.toFixed(2);
                       })()}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className={`text-sm text-gray-900 ${holding.__flash ? 'price-flash' : ''}`}>₹{holding.lastPrice || 'N/A'}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       <div className="text-sm text-gray-900">₹{(() => {
                         // Use database value if available, otherwise calculate
                         if (holding.currentAmount !== undefined && holding.currentAmount !== null) {
@@ -994,7 +1106,7 @@ const Holdings = () => {
                         return amount.toFixed(2);
                       })()}</div>
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       {holding.change !== undefined ? (
                         <div className={`text-sm ${holding.change >= 0 ? 'text-green-600' : 'text-red-600'} ${holding.__flash ? 'price-flash' : ''}`}>
                           {holding.change >= 0 ? '+' : ''}₹{Number(holding.change).toFixed(2)}
@@ -1003,7 +1115,7 @@ const Holdings = () => {
                         <div className="text-sm text-gray-500">N/A</div>
                       )}
                   </td>
-                  <td className="px-4 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2 whitespace-nowrap">
                       {holding.pnl !== undefined && holding.pnlPercentage !== undefined ? (
                         <div className={`text-sm ${holding.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {holding.pnl >= 0 ? '+' : ''}₹{holding.pnl} ({holding.pnlPercentage >= 0 ? '+' : ''}{holding.pnlPercentage}%)
@@ -1012,7 +1124,7 @@ const Holdings = () => {
                         <div className="text-sm text-gray-500">N/A</div>
                       )}
                   </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
+                    <td className="px-4 py-2 whitespace-nowrap text-sm font-medium">
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => {
