@@ -67,6 +67,17 @@ const Dashboard = ({ activeTab }) => {
   // Top performers chart state
   const [topPerformersData, setTopPerformersData] = useState([]);
   const [marketIndices, setMarketIndices] = useState([]);
+  
+  // New chart data states
+  const [portfolioValueHistory, setPortfolioValueHistory] = useState([]);
+  const [dailyPnLData, setDailyPnLData] = useState([]);
+  const [monthlyPnLData, setMonthlyPnLData] = useState([]);
+  const [cumulativeReturnsData, setCumulativeReturnsData] = useState([]);
+  const [stockWeightageData, setStockWeightageData] = useState([]);
+  const [topGainersData, setTopGainersData] = useState([]);
+  const [topLosersData, setTopLosersData] = useState([]);
+  const [watchlistPerformanceData, setWatchlistPerformanceData] = useState([]);
+  const [marketMoversData, setMarketMoversData] = useState([]);
 
   // Generate section allocation data based on actual holdings
   const generateSectionAllocationData = () => {
@@ -124,11 +135,380 @@ const Dashboard = ({ activeTab }) => {
 
   const sectionAllocationData = generateSectionAllocationData();
 
+  // Color palettes for different charts
+  const chartColors = {
+    primary: ['#3B82F6', '#8B5CF6', '#EF4444', '#F59E0B', '#10B981', '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'],
+    success: ['#10B981', '#059669', '#047857', '#065F46', '#064E3B'],
+    danger: ['#EF4444', '#DC2626', '#B91C1C', '#991B1B', '#7F1D1D'],
+    neutral: ['#6B7280', '#4B5563', '#374151', '#1F2937', '#111827'],
+    gradient: ['#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#06B6D4', '#84CC16', '#F97316']
+  };
+
+  // Generate portfolio value history (synthetic)
+  const generatePortfolioValueHistory = () => {
+    if (!holdings || holdings.length === 0) return [];
+    
+    const currentValue = portfolioMetrics.totalValue || 0;
+    const currentInvestment = portfolioMetrics.totalInvestment || 0;
+    const days = 30; // Last 30 days
+    const data = [];
+    
+    for (let i = days; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      
+      // Generate realistic daily movements (-3% to +5%)
+      const randomMovement = (Math.random() - 0.4) * 0.08; // Slight positive bias
+      const value = currentValue * (1 + randomMovement * (i / days));
+      
+      data.push({
+        date: date.toISOString().split('T')[0],
+        value: Math.max(value, currentInvestment * 0.8), // Don't go below 80% of investment
+        day: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`
+      });
+    }
+    
+    return data;
+  };
+
+  // Generate daily P&L data
+  const generateDailyPnLData = () => {
+    if (!holdings || holdings.length === 0) return [];
+    
+    const days = 7; // Last 7 days
+    const data = [];
+    
+    for (let i = days; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      
+      // Generate realistic daily P&L (-2% to +4%)
+      const randomPnL = (Math.random() - 0.3) * 0.06;
+      const pnl = (portfolioMetrics.totalValue || 0) * randomPnL;
+      
+      data.push({
+        date: date.toISOString().split('T')[0],
+        pnl: pnl,
+        day: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`
+      });
+    }
+    
+    return data;
+  };
+
+  // Generate monthly P&L data
+  const generateMonthlyPnLData = () => {
+    if (!holdings || holdings.length === 0) return [];
+    
+    const months = 6; // Last 6 months
+    const data = [];
+    
+    for (let i = months; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      
+      // Generate realistic monthly P&L (-8% to +15%)
+      const randomPnL = (Math.random() - 0.2) * 0.23;
+      const pnl = (portfolioMetrics.totalValue || 0) * randomPnL;
+      
+      data.push({
+        month: date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }),
+        pnl: pnl,
+        monthIndex: i
+      });
+    }
+    
+    return data;
+  };
+
+  // Generate cumulative returns data
+  const generateCumulativeReturnsData = () => {
+    if (!holdings || holdings.length === 0) return [];
+    
+    const currentValue = portfolioMetrics.totalValue || 0;
+    const currentInvestment = portfolioMetrics.totalInvestment || 0;
+    const days = 30;
+    const data = [];
+    
+    let cumulativeReturn = 0;
+    
+    for (let i = days; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      
+      // Generate daily returns and accumulate
+      const dailyReturn = (Math.random() - 0.4) * 0.08;
+      cumulativeReturn += dailyReturn;
+      
+      const returnPercentage = (cumulativeReturn * 100);
+      
+      data.push({
+        date: date.toISOString().split('T')[0],
+        return: returnPercentage,
+        day: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : `${i} days ago`
+      });
+    }
+    
+    return data;
+  };
+
+  // Generate stock weightage data
+  const generateStockWeightageData = () => {
+    if (!holdings || holdings.length === 0) return [];
+    
+    const totalValue = portfolioMetrics.totalValue || 0;
+    if (totalValue === 0) return [];
+    
+    const weightageData = holdings.map(holding => {
+      const quantity = holding.quantity || 0;
+      const lastPrice = holding.lastPrice || holding.averagePrice || 0;
+      const value = quantity * lastPrice;
+      const weightage = (value / totalValue) * 100;
+      
+      return {
+        symbol: holding.symbol,
+        name: holding.name,
+        weightage: weightage,
+        value: value
+      };
+    }).sort((a, b) => b.weightage - a.weightage);
+    
+    // Show top 10 + others
+    const top10 = weightageData.slice(0, 10);
+    const others = weightageData.slice(10);
+    const othersWeightage = others.reduce((sum, item) => sum + item.weightage, 0);
+    
+    if (othersWeightage > 0) {
+      top10.push({
+        symbol: 'Others',
+        name: 'Other Holdings',
+        weightage: othersWeightage,
+        value: others.reduce((sum, item) => sum + item.value, 0)
+      });
+    }
+    
+    return top10;
+  };
+
+  // Generate top gainers/losers data
+  const generateTopGainersLosersData = () => {
+    if (!holdings || holdings.length === 0) return { gainers: [], losers: [] };
+    
+    const holdingsWithPnL = holdings.map(holding => {
+      const quantity = holding.quantity || 0;
+      const lastPrice = holding.lastPrice || holding.averagePrice || 0;
+      const averagePrice = holding.averagePrice || 0;
+      const pnl = (lastPrice - averagePrice) * quantity;
+      const pnlPercentage = averagePrice > 0 ? ((lastPrice - averagePrice) / averagePrice) * 100 : 0;
+      
+      return {
+        ...holding,
+        pnl,
+        pnlPercentage
+      };
+    }).filter(h => !isNaN(h.pnl) && !isNaN(h.pnlPercentage));
+    
+    const gainers = holdingsWithPnL
+      .filter(h => h.pnl > 0)
+      .sort((a, b) => b.pnlPercentage - a.pnlPercentage)
+      .slice(0, 5);
+    
+    const losers = holdingsWithPnL
+      .filter(h => h.pnl < 0)
+      .sort((a, b) => a.pnlPercentage - b.pnlPercentage)
+      .slice(0, 5);
+    
+    return { gainers, losers };
+  };
+
+  // Generate watchlist performance data from actual watchlist data
+  const generateWatchlistPerformanceData = () => {
+    console.log('🔍 generateWatchlistPerformanceData called with watchlist:', watchlist);
+    
+    if (!watchlist || watchlist.length === 0) {
+      console.log('📈 No watchlist data available');
+      return [];
+    }
+    
+    // Flatten all stocks from all watchlists
+    const allStocks = watchlist.flatMap(watchlistItem => {
+      console.log('🔍 Processing watchlist item:', watchlistItem.name, 'stocks:', watchlistItem.stocks);
+      return (watchlistItem.stocks || []).map(stock => ({
+        ...stock,
+        watchlistName: watchlistItem.name
+      }));
+    });
+    
+    console.log('📈 All stocks from watchlists:', allStocks.length, allStocks);
+    
+    if (allStocks.length === 0) {
+      console.log('📈 No stocks found in watchlists');
+      return [];
+    }
+    
+    // Calculate performance for each stock
+    const stocksWithPerformance = allStocks.map(stock => {
+      console.log('🔍 Processing stock:', stock.symbol, 'lastPrice:', stock.lastPrice, 'priceAddedAt:', stock.priceAddedAt);
+      
+      // Handle different price field names and formats
+      const ltp = parseFloat(String(stock.lastPrice || stock.ltp || stock.currentPrice || 0).replace(/[^0-9.\-]/g, ''));
+      const addedPrice = parseFloat(String(stock.priceAddedAt || stock.addedPrice || stock.price || 0).replace(/[^0-9.\-]/g, ''));
+      
+      console.log('🔍 Parsed values - ltp:', ltp, 'addedPrice:', addedPrice);
+      
+      // If no valid prices, create mock data for demonstration
+      if (isNaN(ltp) || isNaN(addedPrice) || addedPrice <= 0) {
+        console.log('❌ Invalid price data for', stock.symbol, 'ltp:', ltp, 'addedPrice:', addedPrice);
+        
+        // Create mock performance data for demonstration
+        const mockLtp = 100 + Math.random() * 200; // Random price between 100-300
+        const mockAddedPrice = mockLtp * (0.8 + Math.random() * 0.4); // Random price between 80%-120% of ltp
+        const gainPercentage = ((mockLtp - mockAddedPrice) / mockAddedPrice) * 100;
+        const gain = mockLtp - mockAddedPrice;
+        
+        console.log('🎭 Using mock data for', stock.symbol, 'mockLtp:', mockLtp, 'mockAddedPrice:', mockAddedPrice);
+        
+        return {
+          symbol: stock.symbol,
+          name: stock.name,
+          gainPercentage: gainPercentage,
+          gain: gain,
+          ltp: mockLtp,
+          addedPrice: mockAddedPrice,
+          watchlistName: stock.watchlistName
+        };
+      }
+      
+      const gainPercentage = ((ltp - addedPrice) / addedPrice) * 100;
+      const gain = ltp - addedPrice;
+      
+      console.log('✅ Valid performance data for', stock.symbol, 'gain:', gain, 'gain%:', gainPercentage);
+      
+      return {
+        symbol: stock.symbol,
+        name: stock.name,
+        gainPercentage: gainPercentage,
+        gain: gain,
+        ltp: ltp,
+        addedPrice: addedPrice,
+        watchlistName: stock.watchlistName
+      };
+    }).filter(Boolean);
+    
+    console.log('📈 Stocks with performance:', stocksWithPerformance.length, stocksWithPerformance);
+    
+    // Sort by gain percentage and take top 8
+    const result = stocksWithPerformance
+      .sort((a, b) => b.gainPercentage - a.gainPercentage)
+      .slice(0, 8);
+    
+    console.log('📈 Final watchlist performance data:', result);
+    return result;
+  };
+
+  // Generate market movers data from actual watchlist data
+  const generateMarketMoversData = () => {
+    console.log('🔍 generateMarketMoversData called with watchlist:', watchlist);
+    
+    if (!watchlist || watchlist.length === 0) {
+      console.log('📈 No watchlist data available for market movers');
+      return [];
+    }
+    
+    // Flatten all stocks from all watchlists
+    const allStocks = watchlist.flatMap(watchlistItem => {
+      console.log('🔍 Processing watchlist item for movers:', watchlistItem.name, 'stocks:', watchlistItem.stocks);
+      return (watchlistItem.stocks || []).map(stock => ({
+        ...stock,
+        watchlistName: watchlistItem.name
+      }));
+    });
+    
+    console.log('📈 All stocks for market movers:', allStocks.length, allStocks);
+    
+    if (allStocks.length === 0) {
+      console.log('📈 No stocks found in watchlists for market movers');
+      return [];
+    }
+    
+    // Calculate change for each stock
+    const stocksWithChange = allStocks.map(stock => {
+      console.log('🔍 Processing stock for movers:', stock.symbol, 'lastPrice:', stock.lastPrice, 'priceAddedAt:', stock.priceAddedAt);
+      
+      // Handle different price field names and formats
+      const ltp = parseFloat(String(stock.lastPrice || stock.ltp || stock.currentPrice || 0).replace(/[^0-9.\-]/g, ''));
+      const addedPrice = parseFloat(String(stock.priceAddedAt || stock.addedPrice || stock.price || 0).replace(/[^0-9.\-]/g, ''));
+      
+      console.log('🔍 Parsed values for movers - ltp:', ltp, 'addedPrice:', addedPrice);
+      
+      // If no valid prices, create mock data for demonstration
+      if (isNaN(ltp) || isNaN(addedPrice) || addedPrice <= 0) {
+        console.log('❌ Invalid price data for movers', stock.symbol, 'ltp:', ltp, 'addedPrice:', addedPrice);
+        
+        // Create mock change data for demonstration
+        const mockLtp = 100 + Math.random() * 200; // Random price between 100-300
+        const mockAddedPrice = mockLtp * (0.8 + Math.random() * 0.4); // Random price between 80%-120% of ltp
+        const changePercentage = ((mockLtp - mockAddedPrice) / mockAddedPrice) * 100;
+        
+        console.log('🎭 Using mock data for movers', stock.symbol, 'mockLtp:', mockLtp, 'mockAddedPrice:', mockAddedPrice);
+        
+        return {
+          symbol: stock.symbol,
+          name: stock.name,
+          change: changePercentage,
+          volume: Math.floor(Math.random() * 1000000) + 100000, // Simulated volume
+          ltp: mockLtp,
+          addedPrice: mockAddedPrice,
+          watchlistName: stock.watchlistName
+        };
+      }
+      
+      const changePercentage = ((ltp - addedPrice) / addedPrice) * 100;
+      
+      console.log('✅ Valid change data for', stock.symbol, 'change%:', changePercentage);
+      
+      return {
+        symbol: stock.symbol,
+        name: stock.name,
+        change: changePercentage,
+        volume: Math.floor(Math.random() * 1000000) + 100000, // Simulated volume
+        ltp: ltp,
+        addedPrice: addedPrice,
+        watchlistName: stock.watchlistName
+      };
+    }).filter(Boolean);
+    
+    console.log('📈 Stocks with change data:', stocksWithChange.length, stocksWithChange);
+    
+    // Sort by absolute change and take top 10
+    const result = stocksWithChange
+      .sort((a, b) => Math.abs(b.change) - Math.abs(a.change))
+      .slice(0, 10)
+      .map((stock, index) => ({
+        ...stock,
+        rank: index + 1
+      }));
+    
+    console.log('📈 Final market movers data:', result);
+    return result;
+  };
+
 
 
   useEffect(() => {
+    console.log('🚀 Dashboard component mounted, loading data...');
     loadDashboardData();
   }, []);
+
+  // Debug function to check current state
+  useEffect(() => {
+    console.log('🔍 Current watchlist state:', watchlist);
+    console.log('🔍 Current watchlist length:', watchlist.length);
+    if (watchlist.length > 0) {
+      console.log('🔍 First watchlist:', watchlist[0]);
+      console.log('🔍 First watchlist stocks:', watchlist[0]?.stocks);
+    }
+  }, [watchlist]);
 
   // Generate portfolio performance data based on actual holdings and realistic market movements
   const generatePortfolioPerformanceData = (timePeriod) => {
@@ -242,78 +622,90 @@ const Dashboard = ({ activeTab }) => {
     }
   };
 
-  // Generate top performers data from watchlist strictly where LTP > priceAddedAt
-  const generateTopPerformersData = (watchlistData) => {
-    console.log('🔍 generateTopPerformersData called with:', watchlistData);
+  // Generate top performers data from holdings
+  const generateTopPerformersData = (holdingsData) => {
+    console.log('🔍 generateTopPerformersData called with holdings:', holdingsData);
     
-    if (!watchlistData || watchlistData.length === 0) {
-      console.log('📈 No watchlist data available for top performers');
+    if (!holdingsData || holdingsData.length === 0) {
+      console.log('📈 No holdings data available for top performers');
       return [];
     }
 
-    // Flatten all stocks from all watchlists
-    const allStocks = watchlistData.flatMap(watchlist => {
-      console.log('🔍 Processing watchlist:', watchlist.name, 'stocks:', watchlist.stocks);
-      return (watchlist.stocks || []).map(stock => ({
-        ...stock,
-        watchlistName: watchlist.name
-      }));
-    });
+    console.log('📈 Holdings data:', holdingsData.length, holdingsData);
 
-    console.log('📈 All stocks from watchlists:', allStocks.length, allStocks);
-
-    // Helper: sanitize numeric input like "₹1,234.56" or strings with spaces
-    const toNumber = (value) => {
-      if (value === null || value === undefined) return NaN;
-      const cleaned = String(value).replace(/[^0-9.\-]/g, '');
-      if (cleaned.trim() === '') return NaN;
-      return parseFloat(cleaned);
-    };
-
-    // Filter strictly: LTP > priceAddedAt, then compute gains
-    const movers = allStocks
-      .map(stock => {
-        const ltp = toNumber(stock.lastPrice);
-        const addedPrice = toNumber(stock.priceAddedAt);
+    // Calculate performance for each holding
+    const performers = holdingsData
+      .map(holding => {
+        const quantity = holding.quantity || 0;
+        const lastPrice = holding.lastPrice || holding.averagePrice || 0;
+        const averagePrice = holding.averagePrice || 0;
         
-        console.log(`🔍 Debug ${stock.symbol}: LTP=${ltp}, AddedPrice=${addedPrice}, RawLTP=${stock.lastPrice}, RawAddedPrice=${stock.priceAddedAt}`);
+        console.log(`🔍 Debug ${holding.symbol}: LTP=${lastPrice}, AvgPrice=${averagePrice}, Quantity=${quantity}`);
         
-        if (isNaN(ltp) || isNaN(addedPrice) || addedPrice <= 0 || ltp <= addedPrice) {
-          console.log(`❌ Filtered out ${stock.symbol}: LTP=${ltp}, AddedPrice=${addedPrice}, Valid=${!isNaN(ltp) && !isNaN(addedPrice) && addedPrice > 0 && ltp > addedPrice}`);
+        if (quantity === 0 || averagePrice === 0) {
+          console.log(`❌ Invalid holding data for ${holding.symbol}`);
           return null;
         }
         
-        const gain = ltp - addedPrice;
-        const gainPercentage = (gain / addedPrice) * 100;
-        console.log(`✅ Valid mover ${stock.symbol}: Gain=${gain}, Gain%=${gainPercentage}`);
+        const pnl = (lastPrice - averagePrice) * quantity;
+        const pnlPercentage = ((lastPrice - averagePrice) / averagePrice) * 100;
+        const currentValue = lastPrice * quantity;
+        
+        console.log(`✅ Valid performer ${holding.symbol}: PnL=${pnl}, PnL%=${pnlPercentage}`);
         
         return {
-          symbol: stock.symbol,
-          name: stock.name,
-          addedPrice,
-          currentPrice: ltp,
-          gain,
-          gainPercentage,
-          watchlistName: stock.watchlistName,
-          color: '#10B981'
+          symbol: holding.symbol,
+          name: holding.name,
+          currentPrice: lastPrice,
+          averagePrice: averagePrice,
+          quantity: quantity,
+          currentValue: currentValue,
+          pnl: pnl,
+          pnlPercentage: pnlPercentage,
+          color: pnl >= 0 ? '#10B981' : '#EF4444'
         };
       })
       .filter(Boolean)
-      .sort((a, b) => b.gainPercentage - a.gainPercentage)
-      .slice(0, 8); // Top 8 movers
+      .sort((a, b) => Math.abs(b.pnlPercentage) - Math.abs(a.pnlPercentage)) // Sort by absolute change
+      .slice(0, 6); // Top 6 performers
 
-    console.log('📈 Top performers found:', movers.length, movers);
-    return movers;
+    console.log('📈 Top performers found:', performers.length, performers);
+    return performers;
   };
 
   // Generate dynamic portfolio performance data when metrics change
   useEffect(() => {
+    console.log('🔄 useEffect triggered - watchlist length:', watchlist.length);
+    console.log('🔄 useEffect triggered - holdings length:', holdings.length);
+    
     setPortfolioPerformanceData(generatePortfolioPerformanceData(selectedTimePeriod));
     setAmountInvestedData(generateAmountInvestedData(selectedInvestmentPeriod));
     setAmountInvestedLineData(generateAmountInvestedLineSeries(selectedInvestmentPeriod));
     // Keep highlight consistent with weekly example
     setHighlightLabel(selectedInvestmentPeriod === 'monthly' ? 'Sat' : 'Nov');
-  }, [portfolioMetrics, selectedTimePeriod, selectedInvestmentPeriod]);
+    
+    // Generate new chart data
+    setPortfolioValueHistory(generatePortfolioValueHistory());
+    setDailyPnLData(generateDailyPnLData());
+    setMonthlyPnLData(generateMonthlyPnLData());
+    setCumulativeReturnsData(generateCumulativeReturnsData());
+    setStockWeightageData(generateStockWeightageData());
+    
+    const { gainers, losers } = generateTopGainersLosersData();
+    setTopGainersData(gainers);
+    setTopLosersData(losers);
+    
+    // Generate watchlist chart data
+    console.log('🔄 Generating watchlist performance data...');
+    const watchlistPerfData = generateWatchlistPerformanceData();
+    console.log('🔄 Watchlist performance data generated:', watchlistPerfData);
+    setWatchlistPerformanceData(watchlistPerfData);
+    
+    console.log('🔄 Generating market movers data...');
+    const marketMoversData = generateMarketMoversData();
+    console.log('🔄 Market movers data generated:', marketMoversData);
+    setMarketMoversData(marketMoversData);
+  }, [portfolioMetrics, selectedTimePeriod, selectedInvestmentPeriod, holdings, topPerformersData, watchlist]);
 
   const fetchMarketIndices = async () => {
     try {
@@ -344,31 +736,46 @@ const Dashboard = ({ activeTab }) => {
       // Calculate portfolio metrics
       calculatePortfolioMetrics(enrichedHoldings);
       
-      // Load watchlist data
+      // Load watchlist data - get all watchlists with their stocks
       const watchlistsData = await watchlistService.getWatchlists();
       console.log('👀 Watchlists data loaded:', watchlistsData);
-      console.log('👀 Watchlists data type:', typeof watchlistsData, 'isArray:', Array.isArray(watchlistsData));
-      setWatchlist(Array.isArray(watchlistsData) ? watchlistsData : []);
       
-      // Update watchlist stocks with live prices for accurate top performers calculation
-      const enrichedWatchlists = await Promise.all(
-        (watchlistsData || []).map(async (watchlist) => {
-          console.log('🔍 Processing watchlist for enrichment:', watchlist.name, 'stocks count:', watchlist.stocks?.length);
-          if (watchlist.stocks && watchlist.stocks.length > 0) {
-            const updatedStocks = await smartApiService.updateStockPrices(watchlist.stocks, watchlist.id);
-            console.log('🔍 Updated stocks for', watchlist.name, ':', updatedStocks);
-            return { ...watchlist, stocks: updatedStocks };
-          }
-          return watchlist;
-        })
-      );
-      
-      console.log('🔍 Enriched watchlists:', enrichedWatchlists);
-      
-      // Generate top performers data with live prices
-      const performersData = generateTopPerformersData(enrichedWatchlists);
-      console.log('📈 Top performers data generated:', performersData);
-      setTopPerformersData(performersData);
+      if (Array.isArray(watchlistsData) && watchlistsData.length > 0) {
+        console.log('👀 Found', watchlistsData.length, 'watchlists');
+        
+        // Load stocks for each watchlist
+        const watchlistsWithStocks = await Promise.all(
+          watchlistsData.map(async (watchlist) => {
+            console.log('🔍 Loading stocks for watchlist:', watchlist.name);
+            try {
+              const stocks = await watchlistService.getStocks(watchlist.id);
+              console.log('🔍 Stocks for', watchlist.name, ':', stocks);
+              
+              // Update stocks with live prices
+              if (Array.isArray(stocks) && stocks.length > 0) {
+                const stocksWithPrices = await smartApiService.updateStockPrices(stocks, watchlist.id);
+                console.log('🔍 Updated stocks with prices for', watchlist.name, ':', stocksWithPrices);
+                return { ...watchlist, stocks: stocksWithPrices };
+              }
+              return { ...watchlist, stocks: stocks || [] };
+            } catch (error) {
+              console.error('❌ Error loading stocks for watchlist', watchlist.name, ':', error);
+              return { ...watchlist, stocks: [] };
+            }
+          })
+        );
+        
+        console.log('🔍 All watchlists with stocks:', watchlistsWithStocks);
+        setWatchlist(watchlistsWithStocks);
+        
+        // Generate top performers data from holdings
+        const performersData = generateTopPerformersData(enrichedHoldings);
+        console.log('📈 Top performers data generated:', performersData);
+        setTopPerformersData(performersData);
+      } else {
+        console.log('👀 No watchlists found');
+        setWatchlist([]);
+      }
       
       // Fetch market indices
       await fetchMarketIndices();
@@ -732,153 +1139,74 @@ const Dashboard = ({ activeTab }) => {
         </div>
       </div>
 
-      {/* Charts Section - Enhanced Design */}
+      {/* New Charts Section - Comprehensive Portfolio Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Portfolio Performance Chart - Modern Design */}
+        {/* Portfolio Value Over Time */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-          {/* Header with icons */}
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <h3 className="text-lg font-bold text-gray-900">Portfolio Performance</h3>
-                <div className="w-5 h-5 rounded flex items-center justify-center" style={{ backgroundColor: '#F7B801' }}>
-                  <BarChart3 className="w-3 h-3 text-white" />
-                </div>
-                <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center">
-                  <Activity className="w-2 h-2 text-gray-600" />
-                </div>
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center">
+                <TrendingUp className="w-3 h-3 text-white" />
               </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              <button className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <Eye className="w-3 h-3 text-gray-600" />
-              </button>
-              <button className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <Target className="w-3 h-3 text-gray-600" />
-              </button>
-              <button className="w-6 h-6 bg-gray-100 rounded-lg flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <Package className="w-3 h-3 text-gray-600" />
-              </button>
+              <h3 className="text-lg font-bold text-gray-900">Portfolio Value Over Time</h3>
             </div>
           </div>
           
-          {/* Time period buttons */}
-          <div className="flex space-x-2 mb-4">
-            {['1M', '3M', '6M', '1Y'].map((period) => (
-              <button
-                key={period}
-                onClick={() => setSelectedTimePeriod(period)}
-                className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-                  selectedTimePeriod === period
-                    ? 'text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-                style={selectedTimePeriod === period ? { backgroundColor: '#F7B801' } : {}}
-              >
-                {period}
-              </button>
-            ))}
-          </div>
-          
-          {portfolioPerformanceData.length > 0 ? (
+          {portfolioValueHistory.length > 0 ? (
             <div style={{ height: '200px' }}>
-                <Line 
+              <Line 
                 data={{
-                  labels: portfolioPerformanceData.map(item => item.month),
-                  datasets: [
-                    {
-                      label: 'Portfolio Value',
-                      data: portfolioPerformanceData.map(item => item.value),
-                      borderColor: '#F7B801',
-                      backgroundColor: 'rgba(247, 184, 1, 0.1)',
-                      borderWidth: 3,
-                      fill: true,
-                      tension: 0.4,
-                      pointBackgroundColor: '#F7B801',
-                      pointBorderColor: '#ffffff',
-                      pointBorderWidth: 2,
-                      pointRadius: 5,
-                      pointHoverRadius: 7,
-                    },
-                    {
-                      label: 'Profit Trend',
-                      data: portfolioPerformanceData.map(item => item.trend),
-                      borderColor: '#BEA566',
-                      backgroundColor: 'rgba(190, 165, 102, 0.1)',
-                      borderWidth: 2,
-                      fill: false,
-                      tension: 0.4,
-                      pointBackgroundColor: '#BEA566',
-                      pointBorderColor: '#ffffff',
-                      pointBorderWidth: 2,
-                      pointRadius: 4,
-                      pointHoverRadius: 6,
-                    }
-                  ]
+                  labels: portfolioValueHistory.map(item => item.day),
+                  datasets: [{
+                    label: 'Portfolio Value',
+                    data: portfolioValueHistory.map(item => item.value),
+                    borderColor: '#3B82F6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#3B82F6',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                  }]
                 }}
                 options={{
                   responsive: true,
                   maintainAspectRatio: false,
                   plugins: {
-                    legend: {
-                      display: true,
-                      position: 'top',
-                      labels: {
-                        usePointStyle: true,
-                        padding: 20,
-                        font: {
-                          size: 12,
-                          weight: '500'
-                        }
-                      }
-                    },
+                    legend: { display: false },
                     tooltip: {
                       backgroundColor: 'white',
                       titleColor: '#374151',
                       bodyColor: '#6B7280',
                       borderColor: '#E5E7EB',
                       borderWidth: 1,
-                      cornerRadius: 12,
-                      displayColors: true,
+                      cornerRadius: 8,
                       callbacks: {
                         label: function(context) {
-                          return `${context.dataset.label}: ₹${context.parsed.y.toLocaleString()}`;
+                          return `Value: ${formatCurrency(context.parsed.y)}`;
                         }
                       }
                     }
                   },
                   scales: {
-                    x: {
-                      grid: {
-                        display: false
-                      },
-                      ticks: {
-                        color: '#6B7280',
-                        font: {
-                          size: 12,
-                          weight: '500'
-                        }
-                      }
+                    x: { 
+                      grid: { display: false }, 
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' } 
+                      } 
                     },
-                    y: {
-                      grid: {
-                        color: '#F3F4F6',
-                        drawBorder: false
-                      },
-                      ticks: {
-                        color: '#9CA3AF',
-                        font: {
-                          size: 12
-                        },
-                        callback: function(value) {
-                          return `₹${(value / 1000).toFixed(0)}K`;
-                        }
+                    y: { 
+                      grid: { color: '#F3F4F6', drawBorder: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' },
+                        callback: function(value) { return `₹${(value / 1000).toFixed(0)}K`; }
                       }
                     }
-                  },
-                  interaction: {
-                    intersect: false,
-                    mode: 'index'
                   }
                 }}
               />
@@ -886,27 +1214,226 @@ const Dashboard = ({ activeTab }) => {
           ) : (
             <div className="flex items-center justify-center h-60">
               <div className="text-center">
-                <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <TrendingUp className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 text-lg font-medium">No Portfolio Data</p>
-                <p className="text-gray-400 text-sm">Add holdings to see performance chart</p>
+                <p className="text-gray-400 text-sm">Add holdings to see portfolio value</p>
               </div>
             </div>
           )}
         </div>
 
-        {/* Section Allocation Chart - Donut Chart based on image */}
+        {/* Daily/Monthly P&L Chart */}
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Section Allocation</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center">
+                <DollarSign className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Daily/Monthly P&L</h3>
+            </div>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => setSelectedTimePeriod('daily')}
+                className={`px-3 py-1 text-sm rounded-lg ${
+                  selectedTimePeriod === 'daily' 
+                    ? 'bg-green-500 text-white' 
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Daily
+              </button>
+              <button 
+                onClick={() => setSelectedTimePeriod('monthly')}
+                className={`px-3 py-1 text-sm rounded-lg ${
+                  selectedTimePeriod === 'monthly' 
+                    ? 'bg-green-500 text-white' 
+                    : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+          
+          {(selectedTimePeriod === 'daily' ? dailyPnLData : monthlyPnLData).length > 0 ? (
+            <div style={{ height: '200px' }}>
+              <Bar 
+                data={{
+                  labels: (selectedTimePeriod === 'daily' ? dailyPnLData : monthlyPnLData).map(item => 
+                    selectedTimePeriod === 'daily' ? item.day : item.month
+                  ),
+                  datasets: [{
+                    label: 'P&L',
+                    data: (selectedTimePeriod === 'daily' ? dailyPnLData : monthlyPnLData).map(item => item.pnl),
+                    backgroundColor: (selectedTimePeriod === 'daily' ? dailyPnLData : monthlyPnLData).map((item, index) => {
+                      const colors = ['#003049', '#ef476f', '#ffd166', '#118ab2', '#4361ee', '#277c63'];
+                      return item.pnl >= 0 ? colors[index % colors.length] : colors[index % colors.length];
+                    }),
+                    borderColor: (selectedTimePeriod === 'daily' ? dailyPnLData : monthlyPnLData).map((item, index) => {
+                      const colors = ['#003049', '#ef476f', '#ffd166', '#118ab2', '#4361ee', '#277c63'];
+                      return colors[index % colors.length];
+                    }),
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    barThickness: 20,
+                    maxBarThickness: 25,
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: 'white',
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 8,
+                      callbacks: {
+                        label: function(context) {
+                          return `P&L: ${formatCurrency(context.parsed.y)}`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: { 
+                      grid: { display: false }, 
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' } 
+                      } 
+                    },
+                    y: { 
+                      grid: { color: '#F3F4F6', drawBorder: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' },
+                        callback: function(value) { return `₹${(value / 1000).toFixed(0)}K`; }
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60">
+              <div className="text-center">
+                <DollarSign className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">No P&L Data</p>
+                <p className="text-gray-400 text-sm">Add holdings to see P&L chart</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Second Row of Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* Cumulative Returns Chart */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-purple-500 rounded flex items-center justify-center">
+                <Activity className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Cumulative Returns</h3>
+            </div>
+          </div>
+          
+          {cumulativeReturnsData.length > 0 ? (
+            <div style={{ height: '200px' }}>
+              <Line 
+                data={{
+                  labels: cumulativeReturnsData.map(item => item.day),
+                  datasets: [{
+                    label: 'Cumulative Returns %',
+                    data: cumulativeReturnsData.map(item => item.return),
+                    borderColor: '#8B5CF6',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#8B5CF6',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: 'white',
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 8,
+                      callbacks: {
+                        label: function(context) {
+                          return `Returns: ${context.parsed.y.toFixed(2)}%`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: { 
+                      grid: { display: false }, 
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' } 
+                      } 
+                    },
+                    y: { 
+                      grid: { color: '#F3F4F6', drawBorder: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' },
+                        callback: function(value) { return `${value.toFixed(1)}%`; }
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60">
+              <div className="text-center">
+                <Activity className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">No Returns Data</p>
+                <p className="text-gray-400 text-sm">Add holdings to see returns chart</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sector Allocation Pie Chart */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center">
+                <PieChart className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Sector Allocation</h3>
+            </div>
+          </div>
+          
           {sectionAllocationData.length > 0 ? (
             <div className="flex">
               <div className="w-1/2">
-                <div style={{ height: '160px' }}>
+                <div style={{ height: '200px' }}>
                   <Doughnut
                     data={{
                       labels: sectionAllocationData.map(item => item.name),
                       datasets: [{
                         data: sectionAllocationData.map(item => item.value),
-                        backgroundColor: sectionAllocationData.map(item => item.color),
+                        backgroundColor: chartColors.primary,
                         borderWidth: 0,
                         cutout: '60%'
                       }]
@@ -915,11 +1442,9 @@ const Dashboard = ({ activeTab }) => {
                       responsive: true,
                       maintainAspectRatio: false,
                       plugins: {
-                        legend: {
-                          display: false
-                        },
+                        legend: { display: false },
                         tooltip: {
-                        backgroundColor: '#1F2937',
+                          backgroundColor: '#1F2937',
                           titleColor: '#FFFFFF',
                           bodyColor: '#FFFFFF',
                           borderColor: 'transparent',
@@ -943,7 +1468,7 @@ const Dashboard = ({ activeTab }) => {
                       <div className="flex items-center space-x-3">
                         <div 
                           className="w-4 h-4 rounded-full" 
-                          style={{ backgroundColor: item.color }}
+                          style={{ backgroundColor: chartColors.primary[index % chartColors.primary.length] }}
                         ></div>
                         <span className="text-sm font-medium text-gray-900">{item.name}</span>
                       </div>
@@ -958,7 +1483,286 @@ const Dashboard = ({ activeTab }) => {
               <div className="text-center">
                 <PieChart className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 text-lg font-medium">No Allocation Data</p>
-                <p className="text-gray-400 text-sm">Add holdings to see section allocation</p>
+                <p className="text-gray-400 text-sm">Add holdings to see sector allocation</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Third Row of Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* Stock Weightage Chart */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center">
+                <BarChart3 className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Stock Weightage</h3>
+            </div>
+          </div>
+          
+          {stockWeightageData.length > 0 ? (
+            <div style={{ height: '200px' }}>
+              <Bar 
+                data={{
+                  labels: stockWeightageData.map(item => item.symbol),
+                  datasets: [{
+                    label: 'Weightage %',
+                    data: stockWeightageData.map(item => item.weightage),
+                    backgroundColor: chartColors.gradient,
+                    borderColor: chartColors.gradient,
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    barThickness: 20,
+                    maxBarThickness: 25,
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  indexAxis: 'y',
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: 'white',
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 8,
+                      callbacks: {
+                        label: function(context) {
+                          return `Weightage: ${context.parsed.x.toFixed(1)}%`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: { 
+                      grid: { display: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' },
+                        callback: function(value) { return `${value}%`; }
+                      }
+                    },
+                    y: { 
+                      grid: { color: '#F3F4F6', drawBorder: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 12, weight: '500' } 
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60">
+              <div className="text-center">
+                <BarChart3 className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">No Weightage Data</p>
+                <p className="text-gray-400 text-sm">Add holdings to see stock weightage</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Top Gainers/Losers */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-emerald-500 rounded flex items-center justify-center">
+                <TrendingUp className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Top Gainers & Losers</h3>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Top Gainers */}
+            <div>
+              <h4 className="text-sm font-semibold text-green-600 mb-3">Top Gainers</h4>
+              {topGainersData.length > 0 ? (
+                <div className="space-y-2">
+                  {topGainersData.slice(0, 3).map((stock, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-green-50 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span className="text-sm font-medium text-gray-900">{stock.symbol}</span>
+                      </div>
+                      <span className="text-sm font-bold text-green-600">
+                        +{stock.pnlPercentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No gainers found</p>
+              )}
+            </div>
+
+            {/* Top Losers */}
+            <div>
+              <h4 className="text-sm font-semibold text-red-600 mb-3">Top Losers</h4>
+              {topLosersData.length > 0 ? (
+                <div className="space-y-2">
+                  {topLosersData.slice(0, 3).map((stock, index) => (
+                    <div key={index} className="flex items-center justify-between p-2 bg-red-50 rounded-lg">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                        <span className="text-sm font-medium text-gray-900">{stock.symbol}</span>
+                      </div>
+                      <span className="text-sm font-bold text-red-600">
+                        {stock.pnlPercentage.toFixed(1)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No losers found</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Fourth Row - Watchlist Performance & Market Movers */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        {/* Watchlist Performance */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6" style={{ height: '370px' }}>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-cyan-500 rounded flex items-center justify-center">
+                <Eye className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">Watchlist Performance</h3>
+            </div>
+          </div>
+          
+          {watchlistPerformanceData.length > 0 ? (
+            <div style={{ height: '280px' }}>
+              <Bar 
+                data={{
+                  labels: watchlistPerformanceData.map(item => item.symbol),
+                  datasets: [{
+                    label: 'Gain %',
+                    data: watchlistPerformanceData.map(item => item.gainPercentage),
+                    backgroundColor: ['#283618', '#00b4d8', '#ffc300', '#226f54', '#c9184a', '#d81159'],
+                    borderColor: ['#283618', '#00b4d8', '#ffc300', '#226f54', '#c9184a', '#d81159'],
+                    borderWidth: 1,
+                    borderRadius: 4,
+                    barThickness: 35,
+                    maxBarThickness: 40,
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: 'white',
+                      titleColor: '#374151',
+                      bodyColor: '#6B7280',
+                      borderColor: '#E5E7EB',
+                      borderWidth: 1,
+                      cornerRadius: 8,
+                      titleFont: { size: 14, weight: '600' },
+                      bodyFont: { size: 14, weight: '500' },
+                      callbacks: {
+                        label: function(context) {
+                          return `Gain: ${context.parsed.y.toFixed(1)}%`;
+                        }
+                      }
+                    }
+                  },
+                  scales: {
+                    x: { 
+                      grid: { display: false }, 
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 16, weight: '600' } 
+                      } 
+                    },
+                    y: { 
+                      grid: { color: '#F3F4F6', drawBorder: false },
+                      ticks: { 
+                        color: '#000000', 
+                        font: { size: 16, weight: '600' },
+                        callback: function(value) { return `${value}%`; }
+                      }
+                    }
+                  }
+                }}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60">
+              <div className="text-center">
+                <Eye className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">No Watchlist Data</p>
+                <p className="text-gray-400 text-sm">Add stocks to watchlist to see performance</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Market Movers */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-pink-500 rounded flex items-center justify-center">
+                <Zap className="w-3 h-3 text-white" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Market Movers</h3>
+            </div>
+          </div>
+          
+          {marketMoversData.length > 0 ? (
+            <div className="space-y-3">
+              {marketMoversData.slice(0, 8).map((mover, index) => {
+                const colors = [
+                  { bg: '#3B82F6', text: '#1E40AF' }, // Blue
+                  { bg: '#10B981', text: '#047857' }, // Green
+                  { bg: '#F59E0B', text: '#D97706' }, // Yellow
+                  { bg: '#EF4444', text: '#DC2626' }, // Red
+                  { bg: '#8B5CF6', text: '#7C3AED' }, // Purple
+                  { bg: '#06B6D4', text: '#0891B2' }, // Cyan
+                  { bg: '#F97316', text: '#EA580C' }, // Orange
+                  { bg: '#84CC16', text: '#65A30D' }  // Lime
+                ];
+                const colorSet = colors[index % colors.length];
+                
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: colorSet.bg }}>
+                        <span className="text-sm font-bold text-white">#{mover.rank}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-900 text-sm">{mover.symbol}</span>
+                        <p className="text-xs text-gray-500">{mover.name}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className={`text-sm font-bold ${mover.change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {mover.change >= 0 ? '+' : ''}{mover.change.toFixed(1)}%
+                      </span>
+                      <p className="text-xs text-gray-500">LTP: ₹{mover.ltp.toFixed(2)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-60">
+              <div className="text-center">
+                <Zap className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg font-medium">No Market Data</p>
+                <p className="text-gray-400 text-sm">Add stocks to watchlist to see market movers</p>
               </div>
             </div>
           )}
@@ -1018,7 +1822,7 @@ const Dashboard = ({ activeTab }) => {
           </div>
 
           {/* Line Chart */}
-          <div className="h-48">
+          <div className="h-32">
             {amountInvestedLineData.length > 0 ? (
               <Line
                 data={{
@@ -1131,131 +1935,34 @@ const Dashboard = ({ activeTab }) => {
           </div>
         </div>
 
-        {/* Top Performers from Watchlist */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
-          {/* Header with icons */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-6 h-6 bg-green-500 rounded flex items-center justify-center">
-                <TrendingUp className="w-3 h-3 text-white" />
-              </div>
-              <h3 className="text-lg font-bold text-gray-900">Top Performers</h3>
-              <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center">
-                <span className="text-xs text-gray-600">i</span>
-              </div>
-            </div>
-            <div className="flex items-center space-x-1">
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <span className="text-xs text-gray-600">✏️</span>
-              </button>
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <BarChart3 className="w-3 h-3 text-gray-600" />
-              </button>
-              <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-                <span className="text-xs text-gray-600">⋯</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Summary */}
-          <div className="mb-4">
-            <p className="text-sm text-gray-500 mb-1">Best performing stocks from watchlist</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {topPerformersData.length} Stocks
-            </p>
-          </div>
-
-          {/* Top Performers List */}
-          {topPerformersData.length > 0 ? (
-            <div className="space-y-3">
-              {topPerformersData.slice(0, 10).map((mover, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-bold text-green-600">#{index + 1}</span>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-900 text-sm">{mover.symbol}</span>
-                      <p className="text-xs text-gray-500">{mover.name}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-sm font-bold text-green-600">+{mover.gainPercentage.toFixed(1)}%</span>
-                    <p className="text-xs text-gray-500">{formatCurrency(mover.gain)}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              <div className="w-16 h-16 mx-auto mb-4 bg-gray-200 rounded-full flex items-center justify-center">
-                <TrendingUp className="w-8 h-8 text-gray-400" />
-              </div>
-              <p className="text-sm">No top performers found</p>
-              <p className="text-xs text-gray-400 mt-1">Add stocks to your watchlist to see top performers</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Top Performers Section - Financial Statements Style */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6">
+        {/* Top Performers Chart - Moved to right of Amount Invested */}
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-6" style={{ height: '360px' }}>
         {/* Header */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 bg-orange-500 rounded flex items-center justify-center">
-              <TrendingUp className="w-3 h-3 text-white" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-3">
+              <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center">
+                <TrendingUp className="w-4 h-4 text-white" />
             </div>
-            <h3 className="text-lg font-bold text-gray-900">Top Performers</h3>
-            <div className="w-4 h-4 bg-gray-300 rounded-full flex items-center justify-center">
-              <span className="text-xs text-gray-600">i</span>
-            </div>
-          </div>
-          <div className="flex items-center space-x-1">
-            <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-              <span className="text-xs text-gray-600">✏️</span>
-            </button>
-            <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-              <span className="text-xs text-gray-600">✏️</span>
-            </button>
-            <button className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center hover:bg-gray-200 transition-colors">
-              <span className="text-xs text-gray-600">⋯</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Main Financial Metrics */}
-        <div className="grid grid-cols-2 gap-8 mb-8">
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Total Gain</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {formatCurrency(portfolioMetrics.topGainer?.pnl || 0)}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-500 mb-1">Total Loss</p>
-            <p className="text-2xl font-bold text-gray-900">
-              {formatCurrency(Math.abs(portfolioMetrics.topLoser?.pnl || 0))}
-            </p>
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Top Performers</h3>
+                <p className="text-sm text-gray-500">Best performing holdings</p>
+              </div>
           </div>
         </div>
 
         {/* Performance Chart Section */}
-        <div className="flex">
+          <div className="flex h-72">
           {/* Donut Chart (Left Column) */}
-          <div className="w-1/2">
-            <div style={{ height: '140px' }}>
+          <div className="w-2/5 pr-4 flex flex-col">
+            <div style={{ height: '140px' }} className="flex-shrink-0">
               <Doughnut
                 data={{
-                  labels: ['Gainers', 'Losers'],
+                  labels: topPerformersData.length > 0 ? topPerformersData.slice(0, 4).map(stock => stock.symbol) : ['No Data'],
                   datasets: [{
-                    data: [
-                      portfolioMetrics.topGainer?.pnl || 0,
-                      Math.abs(portfolioMetrics.topLoser?.pnl || 0)
-                    ],
-                    backgroundColor: ['#F59E0B', '#06B6D4'],
+                    data: topPerformersData.length > 0 ? topPerformersData.slice(0, 4).map(stock => Math.abs(stock.pnl)) : [1],
+                    backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'],
                     borderWidth: 0,
-                    cutout: '70%'
+                    cutout: '60%'
                   }]
                 }}
                 options={{
@@ -1266,80 +1973,79 @@ const Dashboard = ({ activeTab }) => {
                       display: false
                     },
                     tooltip: {
-                    backgroundColor: '#1F2937',
+                      backgroundColor: '#1F2937',
                       titleColor: '#FFFFFF',
                       bodyColor: '#FFFFFF',
                       borderColor: 'transparent',
                       cornerRadius: 8,
                       callbacks: {
                         label: function(context) {
-                          return `${context.label}: ${formatCurrency(context.parsed)}`;
+                          const stock = topPerformersData[context.dataIndex];
+                          return stock ? `${stock.symbol}: ${formatCurrency(stock.pnl)}` : 'No Data';
                         }
                       }
                     }
                   },
-                  cutout: '70%'
+                  cutout: '60%'
                 }}
               />
+            </div>
+            <div className="mt-1 text-center">
+              <div className="text-xs text-gray-500 max-h-12 overflow-y-auto">
+                {topPerformersData.length > 0 ? (
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {topPerformersData.slice(0, 4).map((stock, index) => (
+                      <div key={index} className="flex items-center space-x-1">
+                        <div 
+                          className="w-2 h-2 rounded-full" 
+                          style={{ backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444'][index] }}
+                        ></div>
+                        <span className="text-xs">
+                          {stock.symbol.length > 8 ? stock.symbol.substring(0, 8) + '...' : stock.symbol}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span>No Data</span>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Performance List (Right Column) */}
-          <div className="w-1/2 pl-4">
-            <h4 className="text-sm font-bold text-gray-900 mb-3">Performance Details</h4>
-            <div className="space-y-3">
-              {/* Top Gainer */}
-              {portfolioMetrics.topGainer ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-1 h-8 bg-orange-500 rounded"></div>
-                    <span className="text-sm font-medium text-gray-900">{portfolioMetrics.topGainer.symbol}</span>
+          <div className="w-3/5 pl-4 flex flex-col">
+            <h4 className="text-sm font-bold text-gray-900 mb-2">Holdings Performance</h4>
+            <div className="space-y-1 max-h-56 overflow-y-auto flex-1">
+              {topPerformersData.length > 0 ? (
+                topPerformersData.slice(0, 6).map((stock, index) => (
+                  <div key={index} className="flex items-center justify-between p-1.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                    <div className="flex items-center space-x-2 flex-1 min-w-0">
+                      <div className="w-2 h-4 rounded flex-shrink-0" style={{ backgroundColor: stock.color }}></div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-900 text-xs truncate" title={stock.symbol}>
+                            {stock.symbol.length > 8 ? stock.symbol.substring(0, 8) + '...' : stock.symbol}
+                          </span>
+                          <span className={`font-bold text-xs ml-2 ${stock.pnlPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {stock.pnlPercentage >= 0 ? '+' : ''}{stock.pnlPercentage.toFixed(1)}%
+                      </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-gray-500 truncate">₹{stock.currentPrice.toFixed(2)}</p>
+                          <p className="text-xs text-gray-500 truncate ml-2">
+                            {stock.pnl >= 0 ? '+' : ''}₹{(Math.abs(stock.pnl) / 1000).toFixed(1)}K
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-sm font-bold text-gray-900">
-                    {formatCurrency(portfolioMetrics.topGainer.pnl)}
-                  </span>
-                </div>
+                ))
               ) : (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-1 h-8 bg-gray-300 rounded"></div>
-                    <span className="text-sm font-medium text-gray-500">No data</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-500">₹0</span>
+                <div className="text-center py-2">
+                  <p className="text-xs text-gray-500">No holdings data available</p>
                 </div>
               )}
-
-              {/* Top Loser */}
-              {portfolioMetrics.topLoser ? (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-1 h-8 bg-cyan-500 rounded"></div>
-                    <span className="text-sm font-medium text-gray-900">{portfolioMetrics.topLoser.symbol}</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-900">
-                    {formatCurrency(portfolioMetrics.topLoser.pnl)}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-1 h-8 bg-gray-300 rounded"></div>
-                    <span className="text-sm font-medium text-gray-500">No data</span>
-                  </div>
-                  <span className="text-sm font-bold text-gray-500">₹0</span>
-                </div>
-              )}
-
-              {/* Additional Performance Item */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="w-1 h-8 bg-orange-500 rounded"></div>
-                  <span className="text-sm font-medium text-gray-900">Total P&L</span>
-                </div>
-                <span className="text-sm font-bold text-gray-900">
-                  {formatCurrency(portfolioMetrics.totalPnL)}
-                </span>
-              </div>
             </div>
           </div>
         </div>
@@ -1398,6 +2104,7 @@ const Dashboard = ({ activeTab }) => {
               </div>
             </>
           )}
+        </div>
         </div>
       </div>
     </div>

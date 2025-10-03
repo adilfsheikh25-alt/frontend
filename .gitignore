@@ -1,1 +1,32 @@
-node_modules
+﻿# Dependencies
+node_modules/
+
+# Build output
+build/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Coverage
+coverage/
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Misc
+*.local
+.vercel/
