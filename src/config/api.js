@@ -8,7 +8,9 @@ export const API_CONFIG = {
     MARKET_DATA_URL: 'https://apiconnect.angelone.in/rest/secure/angelbroking/market/v1/quote/'
   },
   BACKEND: {
-    BASE_URL: 'http://localhost:5000/api'
+    BASE_URL: (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BACKEND_URL)
+      || (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.BACKEND_URL)
+      || (typeof window !== 'undefined' && `${window.location.origin.replace(/\/$/, '')}/api`)
   }
 };
 
