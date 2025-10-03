@@ -10,7 +10,16 @@ export const API_CONFIG = {
   BACKEND: {
     BASE_URL: (typeof process !== 'undefined' && process.env && process.env.REACT_APP_BACKEND_URL)
       || (typeof window !== 'undefined' && window.__CONFIG__ && window.__CONFIG__.BACKEND_URL)
-      || (typeof window !== 'undefined' && `${window.location.origin.replace(/\/$/, '')}/api`)
+      || (function() {
+        if (typeof window !== 'undefined') {
+          const { hostname } = window.location;
+          if (hostname === 'localhost' || hostname === '127.0.0.1') {
+            return 'http://localhost:5000/api';
+          }
+          return `${window.location.origin.replace(/\/$/, '')}/api`;
+        }
+        return 'http://localhost:5000/api';
+      })()
   }
 };
 
