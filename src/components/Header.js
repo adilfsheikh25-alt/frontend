@@ -48,6 +48,16 @@ const Header = ({ isLoggedIn, onLogout, isAutoLoggingIn }) => {
               Overview
             </Link>
             <Link
+              to="/corporate-actions"
+              className={`px-4 py-2 rounded-lg transition-colors ${
+                location.pathname === '/corporate-actions' 
+                  ? 'bg-white/20 text-white' 
+                  : 'text-white hover:bg白/10'
+              }`}
+            >
+              Corporate Actions
+            </Link>
+            <Link
               to="/holdings"
               className={`px-4 py-2 rounded-lg transition-colors ${
                 location.pathname === '/holdings' 

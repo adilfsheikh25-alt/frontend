@@ -8,6 +8,7 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import Settings from './components/Settings';
 import LoginPage from './components/LoginPage';
 import NewsPage from './components/NewsPage';
+import CorporateActions from './components/CorporateActions';
 import loginService from './services/loginService';
 import './App.css';
 
@@ -90,6 +91,7 @@ function App() {
           <Route path="/analytics" element={<AnalyticsDashboard />} />
           <Route path="/news" element={<NewsPage />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/corporate-actions" element={<CorporateActions />} />
         </Routes>
       </div>
     </Router>
